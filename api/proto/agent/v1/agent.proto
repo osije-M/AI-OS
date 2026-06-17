@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+// AgentRuntime = 非确定性智能层（Python / LangGraph 实现）。
+// 由 Orchestrator 通过 gRPC 调用，运行一个 Agent 图并返回最终结果与执行轨迹。
+package aios.agent.v1;
+
+option go_package = "github.com/osije/ai-os/api/gen/go/agent/v1;agentv1";
+
+service AgentRuntime {
+  // 运行一个 Agent 图直到结束（原型阶段先做 unary，后续可加流式）。
+  rpc RunGraph(RunGraphRequest) returns (RunGraphReply);
+}
+
+message RunGraphRequest {
+  string trace_id = 1;             // 贯穿全链路的追踪 id
+  string task = 2;                 // 用户任务 / 目标
+  string agent = 3;                // 选择哪张图，如 "supervisor"
+  map<string, string> params = 4;  // 额外参数
+}
+
+message RunGraphReply {
+  string trace_id = 1;
+  string output = 2;               // 最终回答
+  string status = 3;               // OK / FAILED
+  repeated NodeTrace trace = 4;    // 逐节点执行轨迹（对应 v4 的 Observability/Trace）
+}
+
+// 单个节点的执行记录。
+message NodeTrace {
+  string node = 1;       // 节点名
+  string type = 2;       // llm / tool / control
+  string summary = 3;    // 简短摘要
+  int64 latency_ms = 4;  // 耗时（毫秒）
+}

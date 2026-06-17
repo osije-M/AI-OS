@@ -1,0 +1,10 @@
+version: v2
+# Go 代码生成。Python 端用 grpc_tools.protoc 单独生成（见 scripts/gen-py.sh），
+# 避免依赖 buf.build BSR 远程插件（本机网络不稳）。
+plugins:
+  - local: protoc-gen-go
+    out: api/gen/go
+    opt: paths=source_relative
+  - local: protoc-gen-go-grpc
+    out: api/gen/go
+    opt: paths=source_relative

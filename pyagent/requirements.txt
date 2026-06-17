@@ -1,0 +1,6 @@
+langgraph
+langchain-core
+grpcio>=1.81.1
+grpcio-tools>=1.81.1
+openai
+python-dotenv

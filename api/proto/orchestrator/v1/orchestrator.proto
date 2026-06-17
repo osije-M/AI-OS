@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+// Orchestrator = 确定性内核的编排控制面（Go / Kratos 实现）。
+// 接收 Gateway 下发的任务，驱动一次执行：调用 AgentRuntime(Python) 跑图，
+// 汇总轨迹后返回。对应 v4 第 8 节 Orchestrator。
+package aios.orchestrator.v1;
+
+option go_package = "github.com/osije/ai-os/api/gen/go/orchestrator/v1;orchestratorv1";
+
+service Orchestrator {
+  rpc RunTask(RunTaskRequest) returns (RunTaskReply);
+}
+
+message RunTaskRequest {
+  string task = 1;
+  string agent = 2;                // 默认 "supervisor"
+  map<string, string> params = 3;
+}
+
+message RunTaskReply {
+  string trace_id = 1;
+  string output = 2;
+  string status = 3;                  // OK / FAILED
+  repeated string node_summaries = 4; // 节点轨迹摘要（给客户端的精简视图）
+}

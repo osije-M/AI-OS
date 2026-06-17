@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+// ToolService = Tool Mesh（Go 实现）。"工具即服务"：Agent 不再直接调函数，
+// 而是通过 gRPC 调用工具服务。对应 v4 第 7 节 Tool Mesh。
+package aios.tool.v1;
+
+option go_package = "github.com/osije/ai-os/api/gen/go/tool/v1;toolv1";
+
+service ToolService {
+  // 调用一个工具。input/output 用 JSON 字符串承载，保持 schema 灵活。
+  rpc Invoke(InvokeRequest) returns (InvokeReply);
+  // 列出可用工具及其契约（input/output schema），供 Agent 端做工具发现。
+  rpc ListTools(ListToolsRequest) returns (ListToolsReply);
+}
+
+message InvokeRequest {
+  string name = 1;        // 工具名
+  string input_json = 2;  // 入参（JSON）
+  string trace_id = 3;
+}
+
+message InvokeReply {
+  bool ok = 1;
+  string output_json = 2;  // 结果（JSON）
+  string error = 3;        // ok=false 时的错误信息
+}
+
+message ListToolsRequest {}
+
+message ListToolsReply {
+  repeated ToolSpec tools = 1;
+}
+
+// 工具契约（对应 v4 的 Tool Contract）。
+message ToolSpec {
+  string name = 1;
+  string description = 2;
+  string input_schema = 3;   // JSON Schema 字符串
+  string output_schema = 4;  // JSON Schema 字符串
+}

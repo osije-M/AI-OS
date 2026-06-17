@@ -1,0 +1,16 @@
+version: v2
+modules:
+  - path: api/proto
+lint:
+  use:
+    - STANDARD
+  # 按 Kratos 官方惯例放宽：用 XxxReply 命名、服务名不强制 Service 后缀、
+  # 目录用 api/<svc>/v1 而非完整包名路径。
+  except:
+    - PACKAGE_VERSION_SUFFIX
+    - PACKAGE_DIRECTORY_MATCH
+    - RPC_RESPONSE_STANDARD_NAME
+    - SERVICE_SUFFIX
+breaking:
+  use:
+    - FILE

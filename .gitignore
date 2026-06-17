@@ -1,0 +1,20 @@
+# secrets
+.env
+*.local
+
+# Go
+/bin/
+*.exe
+*.out
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+pyagent/gen/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store

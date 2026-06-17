@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+// Gateway = 系统入口（Go / Kratos 实现）。对外暴露 HTTP/gRPC，做鉴权/限流/
+// 路由，转发到 Orchestrator。对应 v4 第 2 节部署架构的 API Gateway。
+// 原型阶段先 gRPC-only；HTTP 注解(google.api.http)+第三方 proto vendoring 留到后续。
+package aios.gateway.v1;
+
+option go_package = "github.com/osije/ai-os/api/gen/go/gateway/v1;gatewayv1";
+
+service Gateway {
+  rpc Run(RunRequest) returns (RunReply);
+}
+
+message RunRequest {
+  string task = 1;
+  string agent = 2;
+}
+
+message RunReply {
+  string trace_id = 1;
+  string output = 2;
+  string status = 3;
+}
