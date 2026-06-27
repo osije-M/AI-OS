@@ -68,9 +68,10 @@ class AgentRuntimeServicer(agent_pb2_grpc.AgentRuntimeServicer):
             )
 
         elapsed_ms = int((time.monotonic() - t_start) * 1000)
+        status = result.get("status", "FAILED")
         logger.info(
-            "RunGraph done trace_id=%s status=OK elapsed=%dms output_len=%d",
-            trace_id, elapsed_ms, len(result["output"]),
+            "RunGraph done trace_id=%s status=%s elapsed=%dms output_len=%d",
+            trace_id, status, elapsed_ms, len(result["output"]),
         )
 
         # Convert trace dicts to proto NodeTrace messages
@@ -87,7 +88,7 @@ class AgentRuntimeServicer(agent_pb2_grpc.AgentRuntimeServicer):
         return agent_pb2.RunGraphReply(
             trace_id=trace_id,
             output=result["output"],
-            status="OK",
+            status=status,
             trace=trace_protos,
         )
 

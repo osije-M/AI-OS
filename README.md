@@ -111,6 +111,7 @@ curl -X POST http://127.0.0.1:8000/v1/run \
 - [x] M0：工具链打通、proto 契约管线（buf lint + generate + go build）端到端可用
 - [x] M1：三个 Go/Kratos 微服务骨架（gateway/orchestrator/toolservice）+ Python LangGraph 智能层（supervisor→worker）
 - [x] M1：端到端跑通一次 task（含跨服务 gRPC + trace_id 透传 + 工具调用）
-- [ ] M2：Failure/Recovery、多 worker、Control Node（见 ROADMAP）
+- [x] M2：动态路由（research/coding/review）+ Failure/Recovery（L1 retry + L3 model-switch）+ reflect 有界循环；真模型链路已验证
+- [ ] M3：Observability 落盘、Policy 防火墙、Gateway HTTP 注解（见 ROADMAP）
 
 详见 [ROADMAP.md](ROADMAP.md)。

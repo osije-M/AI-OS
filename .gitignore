@@ -14,6 +14,9 @@ __pycache__/
 venv/
 pyagent/gen/
 
+# 方案文档（本地保留，不入库）
+docs/方案/
+
 # IDE / OS
 .idea/
 .vscode/

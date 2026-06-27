@@ -17,10 +17,13 @@
 
 > 注：wire 与 protobuf v2 模块缓存有兼容问题导致 `wire gen` 报 internal error，三服务的 `wire_gen.go` 暂为手写（与生成物等价），`wire.go` 模板保留。M2 可重新评估。
 
-## M2 — 编排能力加厚（对应 v4 第 4/6/10 节）
-- [ ] Failure/Recovery：L1 retry + L3 model-switch
-- [ ] 多 Agent：supervisor 路由到 research/coding/review 多 worker
-- [ ] Control Node：IF / LOOP
+## M2 — 编排能力加厚 ✅（已完成并端到端验证，对应 v4 第 4/6/10 节）
+- [x] Failure/Recovery：L1 retry（瞬时错误白名单+退避）+ L3 model-switch（切 deepseek-reasoner）；Orchestrator 对 Unavailable/DeadlineExceeded 重试；修复 v1「失败谎报 OK」缺陷
+- [x] 多 Agent：supervisor 动态路由（LLM 分类+关键词兜底）到 research/coding/review 三 worker
+- [x] Control Node：reflect 节点 PASS/RETRY 有界循环（MAX_LOOPS，agentic loop 雏形）
+
+> 验证：离线路由三分类正确；真模型完整链路 status=OK；故障注入可见 retry/switch/真实 FAILED。
+> 调优待办：reflect 判官偏严，简单任务也常触发 RETRY 循环（实测一次任务 6 次 LLM 调用），后续可放宽判定或降低 MAX_LOOPS 默认值。
 
 ## M3 — 平台能力（对应 v4 第 11/12 节，留接口占位）
 - [ ] Observability：结构化 trace → 文件/简单存储（先不上 ClickHouse）
