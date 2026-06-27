@@ -570,4 +570,5 @@ def run_graph(task: str) -> dict:
         "output": result["output"],
         "trace": result["trace"],
         "status": status,
+        "route": result.get("route", ""),
     }

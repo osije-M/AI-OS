@@ -26,7 +26,7 @@
 > 调优待办：reflect 判官偏严，简单任务也常触发 RETRY 循环（实测一次任务 6 次 LLM 调用），后续可放宽判定或降低 MAX_LOOPS 默认值。
 
 ## M3 — 平台能力（对应 v4 第 11/12 节，留接口占位）
-- [ ] Observability：结构化 trace → 文件/简单存储（先不上 ClickHouse）
+- [x] Observability ✅：独立 trace-store 服务(:9400, 内存+JSONL落盘可回放) + orchestrator 最佳努力 capture + gateway 查询 API(`/v1/trace/{id}`、`/v1/traces`) + `/viewer` HTML 链路查看器 + `tracectl` CLI(lipgloss)。凭 trace_id 可还原"请求怎么走的"，同一份 JSON 喂 HTML 与 CLI 两渲染器。已端到端验证(含重启持久化、宕机不影响主链路)。
 - [ ] Policy：请求前置 Allow/Deny（执行防火墙雏形）
 - [ ] Gateway HTTP：引入 google.api.http 注解 + 第三方 proto vendoring（offline-safe）
 

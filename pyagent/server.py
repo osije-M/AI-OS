@@ -90,6 +90,7 @@ class AgentRuntimeServicer(agent_pb2_grpc.AgentRuntimeServicer):
             output=result["output"],
             status=status,
             trace=trace_protos,
+            route=result.get("route", ""),
         )
 
 

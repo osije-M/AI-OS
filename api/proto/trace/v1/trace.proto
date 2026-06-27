@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+// TraceStore = 可观测性持久化服务（Go/Kratos）。把每次执行的链路 trace 按
+// trace_id 存起来，供事后查询与渲染。对应 v4 第 12 节 Observability/Trace。
+package aios.trace.v1;
+
+option go_package = "github.com/osije/ai-os/api/gen/go/trace/v1;tracev1";
+
+service TraceStore {
+  rpc Save(SaveRequest) returns (SaveReply);   // capture：执行完落盘
+  rpc Get(GetRequest) returns (GetReply);      // 按 trace_id 查
+  rpc List(ListRequest) returns (ListReply);   // 列最近 N 条（给查看器列表）
+}
+
+// 一次完整执行的链路记录。即对外 JSON 渲染契约（"预设参数位置"）。
+message Trace {
+  string trace_id = 1;
+  string task = 2;
+  string status = 3;        // OK / FAILED
+  string route = 4;         // research / coding / review
+  int64 elapsed_ms = 5;
+  int64 started_at = 6;     // unix 毫秒
+  int64 ended_at = 7;       // unix 毫秒
+  string output = 8;        // 最终输出（落盘前截断）
+  repeated Step steps = 9;  // 逐步轨迹，时间线/流程图的数据源
+}
+
+// 链路中的一步。
+message Step {
+  int32 seq = 1;
+  string node = 2;          // supervisor / coding / reflect / llm_retry / llm_switch / tool:reverse ...
+  string type = 3;          // control / llm / tool
+  string summary = 4;
+  int64 latency_ms = 5;
+  string model = 6;         // 可空：实际使用的模型
+  string status = 7;        // ok / error
+}
+
+message SaveRequest { Trace trace = 1; }
+message SaveReply { bool ok = 1; }
+
+message GetRequest { string trace_id = 1; }
+message GetReply {
+  Trace trace = 1;
+  bool found = 2;
+}
+
+message ListRequest { int32 limit = 1; }
+message ListReply { repeated Trace traces = 1; }  // 摘要列表（steps 可省）

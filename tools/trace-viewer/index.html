@@ -1,0 +1,1073 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI-OS Trace Viewer</title>
+<style>
+  /* ========= Reset & Base ========= */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:          #0f1117;
+    --surface:     #1a1d27;
+    --surface2:    #22253a;
+    --border:      #2e3148;
+    --text:        #e2e4f0;
+    --text-muted:  #7a7f9a;
+    --text-faint:  #454963;
+
+    --green:       #3dd68c;
+    --green-dim:   #1a4a34;
+    --red:         #f26464;
+    --red-dim:     #4a1a1a;
+    --yellow:      #f5c842;
+    --yellow-dim:  #3d3210;
+    --blue:        #6ea8fe;
+    --blue-dim:    #1a2e4a;
+    --purple:      #c084fc;
+    --purple-dim:  #2d1a4a;
+    --orange:      #fb923c;
+    --orange-dim:  #3d2010;
+
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Microsoft YaHei", sans-serif;
+    --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas,
+                 "Courier New", monospace;
+
+    --radius: 8px;
+    --radius-sm: 4px;
+    --shadow: 0 2px 12px rgba(0,0,0,0.4);
+  }
+
+  html { font-size: 14px; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* ========= Layout ========= */
+  .app-header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: var(--blue);
+    white-space: nowrap;
+    user-select: none;
+  }
+  .logo span { color: var(--text-muted); font-weight: 400; font-size: 12px; margin-left: 6px; }
+
+  .search-row {
+    display: flex;
+    gap: 8px;
+    flex: 1;
+    min-width: 260px;
+  }
+
+  input[type="text"] {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 6px 10px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  input[type="text"]:focus { border-color: var(--blue); }
+  input[type="text"]::placeholder { color: var(--text-faint); }
+
+  button {
+    background: var(--blue);
+    color: #0f1117;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 6px 16px;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+    white-space: nowrap;
+  }
+  button:hover { opacity: 0.85; }
+  button:active { transform: scale(0.97); }
+  button.secondary {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    font-weight: 400;
+  }
+  button.secondary:hover { border-color: var(--blue); color: var(--blue); }
+
+  .recent-wrap {
+    position: relative;
+  }
+  #recentBtn { font-size: 13px; }
+
+  .dropdown {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    min-width: 360px;
+    max-width: 520px;
+    z-index: 200;
+    overflow: hidden;
+  }
+  .dropdown.open { display: block; }
+  .dropdown-header {
+    padding: 8px 12px;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    border-bottom: 1px solid var(--border);
+  }
+  .dropdown-item {
+    padding: 9px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .dropdown-item:last-child { border-bottom: none; }
+  .dropdown-item:hover { background: var(--surface2); }
+  .dropdown-item .di-id {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--blue);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
+    flex-shrink: 0;
+  }
+  .dropdown-item .di-task {
+    color: var(--text-muted);
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .dropdown-item .di-status { margin-left: auto; flex-shrink: 0; }
+  .dropdown-empty {
+    padding: 16px;
+    text-align: center;
+    color: var(--text-faint);
+    font-size: 12px;
+  }
+
+  .main { max-width: 960px; margin: 0 auto; padding: 24px 20px 60px; }
+
+  /* ========= States ========= */
+  .state-empty, .state-error, .state-loading {
+    margin-top: 60px;
+    text-align: center;
+    color: var(--text-muted);
+  }
+  .state-empty .icon, .state-error .icon, .state-loading .icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    display: block;
+  }
+  .state-empty h2, .state-error h2, .state-loading h2 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .state-error h2 { color: var(--red); }
+  .state-error p { font-size: 13px; color: var(--text-faint); max-width: 360px; margin: 0 auto; }
+  .spinner {
+    width: 36px; height: 36px;
+    border: 3px solid var(--border);
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    margin: 0 auto 16px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ========= Demo banner ========= */
+  .demo-banner {
+    background: var(--yellow-dim);
+    border: 1px solid var(--yellow);
+    border-radius: var(--radius-sm);
+    color: var(--yellow);
+    font-size: 12px;
+    padding: 6px 12px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .demo-banner b { font-weight: 700; }
+
+  /* ========= Trace Header Card ========= */
+  .trace-header {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow);
+  }
+  .trace-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .trace-id {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 2px 8px;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    border-radius: 100px;
+    padding: 2px 10px;
+    border: 1px solid transparent;
+  }
+  .badge-ok    { background: var(--green-dim);  color: var(--green);  border-color: var(--green); }
+  .badge-error { background: var(--red-dim);    color: var(--red);    border-color: var(--red); }
+  .badge-route {
+    background: var(--blue-dim);
+    color: var(--blue);
+    border-color: var(--blue);
+    text-transform: none;
+    font-weight: 500;
+    font-size: 12px;
+  }
+
+  .trace-task {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 14px;
+    line-height: 1.4;
+  }
+
+  .trace-stats {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  .stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-faint); }
+  .stat-value { font-size: 13px; font-weight: 600; color: var(--text); font-family: var(--font-mono); }
+  .stat-value.elapsed { color: var(--yellow); }
+
+  /* ========= Timeline ========= */
+  .section-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-faint);
+    margin-bottom: 12px;
+    margin-top: 24px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-title::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .timeline {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  /* vertical rail */
+  .timeline::before {
+    content: "";
+    position: absolute;
+    left: 28px;
+    top: 16px;
+    bottom: 16px;
+    width: 2px;
+    background: var(--border);
+    border-radius: 1px;
+  }
+
+  .tl-step {
+    display: flex;
+    gap: 16px;
+    position: relative;
+    padding-bottom: 12px;
+  }
+  .tl-step:last-child { padding-bottom: 0; }
+
+  /* dot on rail */
+  .tl-dot {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+    margin-top: 10px;
+    margin-left: 19px;
+    z-index: 1;
+    transition: transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+  }
+
+  /* type colours for dot */
+  .tl-step.type-control .tl-dot { border-color: var(--purple); background: var(--purple-dim); color: var(--purple); }
+  .tl-step.type-llm     .tl-dot { border-color: var(--blue);   background: var(--blue-dim);   color: var(--blue); }
+  .tl-step.type-tool    .tl-dot { border-color: var(--orange);  background: var(--orange-dim);  color: var(--orange); }
+
+  .tl-step.status-error .tl-dot { border-color: var(--red) !important; background: var(--red-dim) !important; }
+
+  /* highlight for retry/switch */
+  .tl-step.is-retry .tl-card,
+  .tl-step.is-switch .tl-card {
+    border-color: var(--orange);
+    background: var(--orange-dim);
+  }
+
+  .tl-body { flex: 1; min-width: 0; }
+
+  .tl-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    transition: border-color 0.15s;
+  }
+  .tl-card:hover { border-color: var(--text-faint); }
+
+  .tl-card-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+  }
+  .tl-seq { font-family: var(--font-mono); font-size: 10px; color: var(--text-faint); min-width: 20px; }
+
+  .tl-node {
+    font-size: 12px;
+    font-weight: 600;
+    font-family: var(--font-mono);
+    color: var(--text);
+  }
+
+  .type-tag {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    border-radius: 100px;
+    padding: 1px 7px;
+  }
+  .type-tag-control { background: var(--purple-dim); color: var(--purple); }
+  .type-tag-llm     { background: var(--blue-dim);   color: var(--blue); }
+  .type-tag-tool    { background: var(--orange-dim);  color: var(--orange); }
+
+  .retry-tag, .switch-tag {
+    font-size: 10px;
+    font-weight: 700;
+    border-radius: 100px;
+    padding: 1px 8px;
+  }
+  .retry-tag  { background: var(--orange-dim); color: var(--orange); border: 1px solid var(--orange); }
+  .switch-tag { background: var(--red-dim);    color: var(--red);    border: 1px solid var(--red); }
+
+  .tl-latency {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .tl-latency.slow { color: var(--yellow); }
+  .tl-latency.very-slow { color: var(--red); }
+
+  .tl-summary {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  .tl-model {
+    margin-top: 4px;
+    font-size: 10px;
+    color: var(--text-faint);
+    font-family: var(--font-mono);
+  }
+
+  .tl-step.status-error .tl-node,
+  .tl-step.status-error .tl-summary { color: var(--red); }
+
+  /* latency bar */
+  .latency-bar-wrap {
+    height: 3px;
+    background: var(--surface2);
+    border-radius: 2px;
+    margin-top: 8px;
+    overflow: hidden;
+  }
+  .latency-bar {
+    height: 100%;
+    border-radius: 2px;
+    background: var(--blue);
+    transition: width 0.4s ease;
+  }
+  .type-control .latency-bar { background: var(--purple); }
+  .type-tool    .latency-bar { background: var(--orange); }
+  .status-error .latency-bar { background: var(--red); }
+
+  /* ========= Output Panel ========= */
+  .output-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-top: 4px;
+    box-shadow: var(--shadow);
+  }
+  .output-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.1s;
+    border: none;
+    background: none;
+    color: var(--text);
+    width: 100%;
+    text-align: left;
+    font-family: var(--font-sans);
+    font-size: 13px;
+  }
+  .output-toggle:hover { background: var(--surface2); }
+  .output-toggle .caret {
+    color: var(--text-faint);
+    transition: transform 0.2s;
+    font-size: 12px;
+  }
+  .output-toggle.expanded .caret { transform: rotate(180deg); }
+
+  .output-body {
+    display: none;
+    border-top: 1px solid var(--border);
+    padding: 16px;
+  }
+  .output-body.expanded { display: block; }
+
+  .output-pre {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.7;
+    max-height: 480px;
+    overflow-y: auto;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+  }
+  .output-pre::-webkit-scrollbar { width: 6px; }
+  .output-pre::-webkit-scrollbar-track { background: transparent; }
+  .output-pre::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* ========= Responsive ========= */
+  @media (max-width: 600px) {
+    .app-header { padding: 10px 14px; }
+    .main { padding: 16px 12px 40px; }
+    .dropdown { min-width: 280px; }
+    .timeline::before { left: 23px; }
+    .tl-dot { margin-left: 14px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== App Header ===== -->
+<header class="app-header">
+  <div class="logo">AI-OS <span>Trace Viewer</span></div>
+
+  <div class="search-row">
+    <input id="traceInput" type="text"
+           placeholder="输入 trace_id 查询..."
+           autocomplete="off" spellcheck="false">
+    <button id="queryBtn" onclick="onQuery()">查询</button>
+    <button class="secondary" id="demoBtn" onclick="loadDemo()">示例</button>
+  </div>
+
+  <div class="recent-wrap">
+    <button class="secondary" id="recentBtn" onclick="toggleRecent()">最近 ▾</button>
+    <div class="dropdown" id="recentDropdown">
+      <div class="dropdown-header">最近 20 条 Trace</div>
+      <div id="recentList"><div class="dropdown-empty">加载中…</div></div>
+    </div>
+  </div>
+</header>
+
+<!-- ===== Main Content ===== -->
+<main class="main" id="mainContent">
+  <div class="state-empty">
+    <span class="icon">🔍</span>
+    <h2>输入 Trace ID 开始查询</h2>
+    <p style="color:var(--text-faint);font-size:13px;margin-top:8px;">
+      或点击「最近」选择历史 Trace，点击「示例」加载内置演示数据
+    </p>
+  </div>
+</main>
+
+<script>
+/* =====================================================================
+   内置示例数据（两条：一条正常、一条含 retry+switch 的失败）
+   ===================================================================== */
+const DEMO_TRACES = {
+  "trace-demo-ok": {
+    traceId:   "trace-demo-ok",
+    task:      "用 Python 写一个判断回文字符串的函数",
+    status:    "OK",
+    route:     "coding",
+    elapsedMs: 18985,
+    startedAt: 1782575048383,
+    endedAt:   1782575067368,
+    output: `def is_palindrome(s: str) -> bool:
+    """判断字符串是否为回文（忽略大小写和非字母数字字符）"""
+    cleaned = ''.join(c.lower() for c in s if c.isalnum())
+    return cleaned == cleaned[::-1]
+
+# 测试
+if __name__ == "__main__":
+    cases = [("racecar", True), ("hello", False), ("A man a plan a canal Panama", True)]
+    for s, expected in cases:
+        result = is_palindrome(s)
+        status = "✓" if result == expected else "✗"
+        print(f"{status}  is_palindrome({s!r}) = {result}")`,
+    steps: [
+      { seq:1, node:"supervisor",  type:"control", summary:"路由决策 → coding（任务类型：代码生成）", latencyMs:3200,  model:"",              status:"ok" },
+      { seq:2, node:"coding",      type:"llm",     summary:"via deepseek-chat (1 次尝试，首次成功)", latencyMs:12000, model:"deepseek-chat",  status:"ok" },
+      { seq:3, node:"reflect",     type:"control", summary:"质量检查 PASS（逻辑正确、有注释、有测试用例）", latencyMs:3500, model:"",        status:"ok" }
+    ]
+  },
+  "trace-demo-retry": {
+    traceId:   "trace-demo-retry",
+    task:      "搜索最新的量子计算突破并总结",
+    status:    "OK",
+    route:     "research",
+    elapsedMs: 42310,
+    startedAt: 1782576000000,
+    endedAt:   1782576042310,
+    output: `## 2025-2026 量子计算重要进展摘要
+
+**1. Google Willow 芯片（2024 Q4）**
+- 105 量子比特，纠错能力达到里程碑
+- 特定基准任务比最快超算快 10^25 倍
+
+**2. Microsoft Azure Quantum（2025 Q2）**
+- 发布 Topological Qubit 原型，相干时间提升 100 倍
+- 错误率降至 0.001% 以下
+
+**3. 中国量子优势声明（2025 Q3）**
+- "祖冲之三号"完成光量子采样，声称超越经典极限
+- 国际学界对实验设置存有争议
+
+**结论**：量子纠错正从理论走向工程实现，预计 2027-2028 年前后出现首个实用量子优势应用。`,
+    steps: [
+      { seq:1, node:"supervisor",       type:"control", summary:"路由决策 → research（含搜索需求）",                           latencyMs:2100,  model:"",              status:"ok" },
+      { seq:2, node:"tool:web_search",  type:"tool",    summary:"执行 web_search(query='量子计算突破 2025')",                  latencyMs:3800,  model:"",              status:"ok" },
+      { seq:3, node:"llm_retry",        type:"llm",     summary:"via deepseek-chat 第 1 次 → 输出过短，触发重试",              latencyMs:8200,  model:"deepseek-chat", status:"error" },
+      { seq:4, node:"llm_retry",        type:"llm",     summary:"via deepseek-chat 第 2 次 → Context 超限，触发模型切换",      latencyMs:9100,  model:"deepseek-chat", status:"error" },
+      { seq:5, node:"llm_switch",       type:"llm",     summary:"切换到 deepseek-reasoner → 生成完整摘要（3 次重试后成功）",   latencyMs:17800, model:"deepseek-reasoner", status:"ok" },
+      { seq:6, node:"reflect",          type:"control", summary:"质量检查 PASS（内容充分，来源可信度注明）",                   latencyMs:1310,  model:"",              status:"ok" }
+    ]
+  }
+};
+
+const DEMO_LIST = Object.values(DEMO_TRACES).map(t => ({
+  traceId:   t.traceId,
+  task:      t.task,
+  status:    t.status,
+  route:     t.route,
+  elapsedMs: t.elapsedMs
+}));
+
+/* =====================================================================
+   数据层
+   ===================================================================== */
+
+/**
+ * 从后端拉取单条 trace。
+ * @param {string} id
+ * @returns {Promise<object>}  trace JSON
+ */
+async function fetchTrace(id) {
+  const res = await fetch(`/v1/trace/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+/**
+ * 从后端拉取最近 trace 列表。
+ * @returns {Promise<object[]>}
+ */
+async function fetchList() {
+  const res = await fetch('/v1/traces?limit=20');
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+  const data = await res.json();
+  return data.traces || [];
+}
+
+/* =====================================================================
+   渲染层 — Header
+   ===================================================================== */
+
+/**
+ * 渲染 trace 顶部信息卡片（task / status / route / 耗时 / 时间戳）。
+ * @param {object} trace
+ * @returns {string} HTML string
+ */
+function renderHeader(trace) {
+  const { traceId, task, status, route, elapsedMs, startedAt, endedAt } = trace;
+
+  const statusBadge = (status || '').toUpperCase() === 'OK'
+    ? `<span class="badge badge-ok">✓ OK</span>`
+    : `<span class="badge badge-error">✗ ${escHtml(status || 'FAILED')}</span>`;
+
+  const routeBadge = route
+    ? `<span class="badge badge-route">${escHtml(route)}</span>` : '';
+
+  const elapsed = typeof elapsedMs === 'number'
+    ? `${(elapsedMs / 1000).toFixed(2)} s` : '—';
+
+  const startStr  = startedAt ? new Date(startedAt).toLocaleString('zh-CN') : '—';
+  const endStr    = endedAt   ? new Date(endedAt).toLocaleString('zh-CN')   : '—';
+  const stepCount = Array.isArray(trace.steps) ? trace.steps.length : 0;
+
+  return `
+<div class="trace-header">
+  <div class="trace-meta-row">
+    <span class="trace-id">${escHtml(traceId)}</span>
+    ${statusBadge}
+    ${routeBadge}
+  </div>
+  <div class="trace-task">${escHtml(task || '（无任务描述）')}</div>
+  <div class="trace-stats">
+    <div class="stat">
+      <span class="stat-label">总耗时</span>
+      <span class="stat-value elapsed">${elapsed}</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">步骤数</span>
+      <span class="stat-value">${stepCount}</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">开始时间</span>
+      <span class="stat-value">${startStr}</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">结束时间</span>
+      <span class="stat-value">${endStr}</span>
+    </div>
+  </div>
+</div>`;
+}
+
+/* =====================================================================
+   渲染层 — Timeline
+   ===================================================================== */
+
+/**
+ * 渲染竖向时间线，每一步含：节点名、类型徽章、retry/switch 高亮、耗时、summary、
+ * 模型名、相对耗时百分比进度条。
+ * @param {object[]} steps   已按 seq 排序
+ * @returns {string} HTML string
+ */
+function renderTimeline(steps) {
+  if (!steps || steps.length === 0) {
+    return '<p style="color:var(--text-faint);font-size:13px;">无步骤数据</p>';
+  }
+
+  // 最大耗时，用于相对进度条
+  const maxLatency = Math.max(...steps.map(s => s.latencyMs || 0), 1);
+
+  const items = steps
+    .slice()
+    .sort((a, b) => a.seq - b.seq)
+    .map(step => renderStep(step, maxLatency))
+    .join('');
+
+  return `<div class="timeline">${items}</div>`;
+}
+
+/**
+ * 渲染单个时间线步骤。
+ * @param {object} step
+ * @param {number} maxLatency
+ * @returns {string}
+ */
+function renderStep(step, maxLatency) {
+  const { seq, node, type, summary, latencyMs, model, status } = step;
+
+  // CSS 类修饰符
+  const typeClass   = `type-${sanitizeClass(type || 'control')}`;
+  const statusClass = (status || '').toLowerCase() === 'error' ? 'status-error' : 'status-ok';
+  const nodeStr     = node || '';
+  const isRetry     = nodeStr.includes('retry');
+  const isSwitch    = nodeStr.includes('switch');
+  const retryClass  = isRetry  ? 'is-retry'  : '';
+  const switchClass = isSwitch ? 'is-switch' : '';
+
+  // dot 图标
+  const dotIcon = type === 'llm' ? '◆' : type === 'tool' ? '⚙' : '●';
+
+  // 类型标签
+  const typeTagClass = `type-tag-${sanitizeClass(type || 'control')}`;
+  const typeLabel    = (type || 'control').toUpperCase();
+
+  // 特殊标签
+  const specialTag = isRetry
+    ? `<span class="retry-tag">RETRY</span>`
+    : isSwitch
+      ? `<span class="switch-tag">SWITCH</span>`
+      : '';
+
+  // 耗时着色
+  const ms     = typeof latencyMs === 'number' ? latencyMs : 0;
+  const msStr  = ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${ms} ms`;
+  const latClass = ms > 15000 ? 'very-slow' : ms > 6000 ? 'slow' : '';
+
+  // 进度条宽度
+  const barPct = Math.round((ms / maxLatency) * 100);
+
+  // 模型行
+  const modelHtml = model
+    ? `<div class="tl-model">model: ${escHtml(model)}</div>` : '';
+
+  return `
+<div class="tl-step ${typeClass} ${statusClass} ${retryClass} ${switchClass}">
+  <div class="tl-dot">${dotIcon}</div>
+  <div class="tl-body">
+    <div class="tl-card">
+      <div class="tl-card-top">
+        <span class="tl-seq">#${seq}</span>
+        <span class="tl-node">${escHtml(nodeStr)}</span>
+        <span class="type-tag ${typeTagClass}">${typeLabel}</span>
+        ${specialTag}
+        <span class="tl-latency ${latClass}">${msStr}</span>
+      </div>
+      <div class="tl-summary">${escHtml(summary || '')}</div>
+      ${modelHtml}
+      <div class="latency-bar-wrap">
+        <div class="latency-bar" style="width:${barPct}%"></div>
+      </div>
+    </div>
+  </div>
+</div>`;
+}
+
+/* =====================================================================
+   渲染层 — Output
+   ===================================================================== */
+
+/**
+ * 渲染可折叠的 output 面板。
+ * @param {object} trace
+ * @returns {string} HTML string
+ */
+function renderOutput(trace) {
+  const output = trace.output || '（无输出内容）';
+  return `
+<div class="output-panel">
+  <button class="output-toggle" id="outputToggle" onclick="toggleOutput()" aria-expanded="false">
+    <span>最终输出</span>
+    <span class="caret">▼</span>
+  </button>
+  <div class="output-body" id="outputBody">
+    <pre class="output-pre">${escHtml(output)}</pre>
+  </div>
+</div>`;
+}
+
+/* =====================================================================
+   主控逻辑
+   ===================================================================== */
+
+let _isDemoMode = false;
+
+/** URL 参数解析 */
+function getParam(key) {
+  return new URLSearchParams(window.location.search).get(key);
+}
+
+/** HTML 转义（防 XSS） */
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** 去除 class 名中危险字符 */
+function sanitizeClass(s) {
+  return String(s).replace(/[^a-z0-9_-]/gi, '');
+}
+
+/** 渲染完整 trace 页面 */
+function renderTrace(trace, demo = false) {
+  const steps = Array.isArray(trace.steps) ? trace.steps : [];
+
+  const demoBanner = demo
+    ? `<div class="demo-banner">⚠ <b>示例模式</b> — 显示的是内置演示数据，非真实后端响应</div>` : '';
+
+  const content = `
+${demoBanner}
+${renderHeader(trace)}
+<div class="section-title">执行链路</div>
+${renderTimeline(steps)}
+<div class="section-title" style="margin-top:24px;">输出结果</div>
+${renderOutput(trace)}
+`;
+  document.getElementById('mainContent').innerHTML = content;
+}
+
+/** 显示加载态 */
+function showLoading(id) {
+  document.getElementById('mainContent').innerHTML = `
+<div class="state-loading">
+  <div class="spinner"></div>
+  <h2>加载中…</h2>
+  <p style="color:var(--text-faint);font-size:12px;margin-top:6px;">${escHtml(id)}</p>
+</div>`;
+}
+
+/** 显示错误态（可附加 demo 回退提示） */
+function showError(id, err, canDemo = false) {
+  const demoHint = canDemo
+    ? `<br><span style="font-size:11px;color:var(--text-faint);">你可以点击「示例」按钮加载内置演示数据</span>` : '';
+  document.getElementById('mainContent').innerHTML = `
+<div class="state-error">
+  <span class="icon">⚠</span>
+  <h2>加载失败</h2>
+  <p>${escHtml(String(err))}${demoHint}</p>
+</div>`;
+}
+
+/**
+ * 加载并渲染指定 trace_id（先尝试后端，?demo=1 或失败时回退到示例数据）。
+ * @param {string} id
+ * @param {boolean} forceDemo  强制使用示例数据
+ */
+async function loadTrace(id, forceDemo = false) {
+  if (!id) return;
+  document.getElementById('traceInput').value = id;
+  showLoading(id);
+  closeDropdown();
+
+  if (forceDemo) {
+    const demo = DEMO_TRACES[id] || Object.values(DEMO_TRACES)[0];
+    _isDemoMode = true;
+    renderTrace(demo, true);
+    return;
+  }
+
+  try {
+    const trace = await fetchTrace(id);
+    _isDemoMode = false;
+    renderTrace(trace, false);
+  } catch (err) {
+    // fetch 失败 → 检查是否有内置示例
+    const fallback = DEMO_TRACES[id];
+    if (fallback) {
+      _isDemoMode = true;
+      renderTrace(fallback, true);
+    } else {
+      showError(id, err, true);
+    }
+  }
+}
+
+/** 「查询」按钮 */
+function onQuery() {
+  const id = document.getElementById('traceInput').value.trim();
+  if (!id) return;
+  // 更新 URL（不刷新）
+  const u = new URL(window.location);
+  u.searchParams.set('trace', id);
+  u.searchParams.delete('demo');
+  history.pushState({}, '', u);
+  loadTrace(id, false);
+}
+
+/** 「示例」按钮：循环加载内置示例 */
+let _demoIdx = 0;
+function loadDemo() {
+  const keys = Object.keys(DEMO_TRACES);
+  const id   = keys[_demoIdx % keys.length];
+  _demoIdx++;
+  document.getElementById('traceInput').value = id;
+  const u = new URL(window.location);
+  u.searchParams.set('demo', '1');
+  u.searchParams.set('trace', id);
+  history.pushState({}, '', u);
+  loadTrace(id, true);
+}
+
+/** output 折叠/展开 */
+function toggleOutput() {
+  const btn  = document.getElementById('outputToggle');
+  const body = document.getElementById('outputBody');
+  if (!btn || !body) return;
+  const expanded = body.classList.toggle('expanded');
+  btn.classList.toggle('expanded', expanded);
+  btn.setAttribute('aria-expanded', expanded);
+}
+
+/* =====================================================================
+   最近列表下拉
+   ===================================================================== */
+
+let _recentLoaded = false;
+
+function toggleRecent() {
+  const dd = document.getElementById('recentDropdown');
+  const open = dd.classList.toggle('open');
+  if (open && !_recentLoaded) {
+    _recentLoaded = true;
+    loadRecentList();
+  }
+}
+
+function closeDropdown() {
+  document.getElementById('recentDropdown').classList.remove('open');
+}
+
+async function loadRecentList() {
+  const listEl = document.getElementById('recentList');
+  try {
+    const traces = await fetchList();
+    renderRecentList(traces, listEl);
+  } catch (_err) {
+    // 后端不可达 → 用内置示例填充
+    renderRecentList(DEMO_LIST, listEl);
+  }
+}
+
+function renderRecentList(traces, container) {
+  if (!traces || traces.length === 0) {
+    container.innerHTML = '<div class="dropdown-empty">暂无记录</div>';
+    return;
+  }
+
+  const items = traces.map(t => {
+    const isOk  = (t.status || '').toUpperCase() === 'OK';
+    const dot   = isOk ? '🟢' : '🔴';
+    const ms    = typeof t.elapsedMs === 'number'
+      ? `${(t.elapsedMs / 1000).toFixed(1)}s` : '';
+    return `
+<div class="dropdown-item" onclick="selectTrace(${JSON.stringify(escHtml(t.traceId))})">
+  <span class="di-id">${escHtml(t.traceId)}</span>
+  <span class="di-task">${escHtml(t.task || '')}</span>
+  <span class="di-status">${dot} ${escHtml(ms)}</span>
+</div>`;
+  }).join('');
+
+  container.innerHTML = items;
+}
+
+function selectTrace(id) {
+  const u = new URL(window.location);
+  u.searchParams.set('trace', id);
+  u.searchParams.delete('demo');
+  history.pushState({}, '', u);
+  loadTrace(id, false);
+  closeDropdown();
+}
+
+/* =====================================================================
+   Enter 键支持
+   ===================================================================== */
+document.getElementById('traceInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') onQuery();
+});
+
+/* 点击外部关闭下拉 */
+document.addEventListener('click', e => {
+  const wrap = document.querySelector('.recent-wrap');
+  if (wrap && !wrap.contains(e.target)) closeDropdown();
+});
+
+/* =====================================================================
+   初始化：读取 URL 参数
+   ===================================================================== */
+(function init() {
+  const demo    = getParam('demo');
+  const traceId = getParam('trace');
+
+  if (traceId) {
+    if (demo === '1') {
+      loadTrace(traceId, true);
+    } else {
+      loadTrace(traceId, false);
+    }
+  } else if (demo === '1') {
+    // ?demo=1 但无 trace id → 加载第一条内置示例
+    const firstKey = Object.keys(DEMO_TRACES)[0];
+    loadTrace(firstKey, true);
+  }
+  // 否则保持空白欢迎状态
+})();
+</script>
+
+</body>
+</html>

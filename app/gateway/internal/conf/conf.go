@@ -1,10 +1,13 @@
 package conf
 
-import "os"
+import (
+	"os"
+)
 
 type Config struct {
 	HTTPAddr         string
 	OrchestratorAddr string
+	TraceStoreAddr   string
 }
 
 func Load() *Config {
@@ -16,8 +19,13 @@ func Load() *Config {
 	if orchAddr == "" {
 		orchAddr = "127.0.0.1:9300"
 	}
+	traceStoreAddr := os.Getenv("TRACE_STORE_ADDR")
+	if traceStoreAddr == "" {
+		traceStoreAddr = "127.0.0.1:9400"
+	}
 	return &Config{
 		HTTPAddr:         httpAddr,
 		OrchestratorAddr: orchAddr,
+		TraceStoreAddr:   traceStoreAddr,
 	}
 }

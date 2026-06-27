@@ -10,6 +10,7 @@ type Config struct {
 	AgentRuntimeAddr string
 	MaxRetries       int // ORCH_MAX_RETRIES，默认 2
 	BackoffMs        int // ORCH_RETRY_BACKOFF_MS，默认 300
+	TraceStoreAddr   string
 }
 
 func Load() *Config {
@@ -32,10 +33,16 @@ func Load() *Config {
 		backoffMs = v
 	}
 
+	traceStoreAddr := os.Getenv("TRACE_STORE_ADDR")
+	if traceStoreAddr == "" {
+		traceStoreAddr = "127.0.0.1:9400"
+	}
+
 	return &Config{
 		GRPCAddr:         addr,
 		AgentRuntimeAddr: agentAddr,
 		MaxRetries:       maxRetries,
 		BackoffMs:        backoffMs,
+		TraceStoreAddr:   traceStoreAddr,
 	}
 }

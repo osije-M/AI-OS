@@ -98,6 +98,7 @@ type RunGraphReply struct {
 	Output        string                 `protobuf:"bytes,2,opt,name=output,proto3" json:"output,omitempty"` // 最终回答
 	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"` // OK / FAILED
 	Trace         []*NodeTrace           `protobuf:"bytes,4,rep,name=trace,proto3" json:"trace,omitempty"`   // 逐节点执行轨迹（对应 v4 的 Observability/Trace）
+	Route         string                 `protobuf:"bytes,5,opt,name=route,proto3" json:"route,omitempty"`   // supervisor 的路由决策：research / coding / review
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -158,6 +159,13 @@ func (x *RunGraphReply) GetTrace() []*NodeTrace {
 		return x.Trace
 	}
 	return nil
+}
+
+func (x *RunGraphReply) GetRoute() string {
+	if x != nil {
+		return x.Route
+	}
+	return ""
 }
 
 // 单个节点的执行记录。
@@ -241,12 +249,13 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\x06params\x18\x04 \x03(\v2*.aios.agent.v1.RunGraphRequest.ParamsEntryR\x06params\x1a9\n" +
 	"\vParamsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8a\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa0\x01\n" +
 	"\rRunGraphReply\x12\x19\n" +
 	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12\x16\n" +
 	"\x06output\x18\x02 \x01(\tR\x06output\x12\x16\n" +
 	"\x06status\x18\x03 \x01(\tR\x06status\x12.\n" +
-	"\x05trace\x18\x04 \x03(\v2\x18.aios.agent.v1.NodeTraceR\x05trace\"l\n" +
+	"\x05trace\x18\x04 \x03(\v2\x18.aios.agent.v1.NodeTraceR\x05trace\x12\x14\n" +
+	"\x05route\x18\x05 \x01(\tR\x05route\"l\n" +
 	"\tNodeTrace\x12\x12\n" +
 	"\x04node\x18\x01 \x01(\tR\x04node\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x18\n" +
