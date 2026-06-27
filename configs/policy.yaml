@@ -1,0 +1,9 @@
+version: "v1"
+rules:
+  - name: block-secrets
+    action: deny
+    match_keywords: ["rm -rf", "drop table", "私钥", "信用卡号"]
+    reason: "命中高危关键词"
+  - name: truncate-overlong
+    action: transform
+    max_task_chars: 4000

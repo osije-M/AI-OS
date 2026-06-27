@@ -11,6 +11,7 @@ type Config struct {
 	MaxRetries       int // ORCH_MAX_RETRIES，默认 2
 	BackoffMs        int // ORCH_RETRY_BACKOFF_MS，默认 300
 	TraceStoreAddr   string
+	PolicyFile       string
 }
 
 func Load() *Config {
@@ -38,11 +39,17 @@ func Load() *Config {
 		traceStoreAddr = "127.0.0.1:9400"
 	}
 
+	policyFile := os.Getenv("POLICY_FILE")
+	if policyFile == "" {
+		policyFile = "configs/policy.yaml"
+	}
+
 	return &Config{
 		GRPCAddr:         addr,
 		AgentRuntimeAddr: agentAddr,
 		MaxRetries:       maxRetries,
 		BackoffMs:        backoffMs,
 		TraceStoreAddr:   traceStoreAddr,
+		PolicyFile:       policyFile,
 	}
 }
