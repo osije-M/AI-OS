@@ -57,7 +57,7 @@ def _env_float(key: str, default: float) -> float:
     except (ValueError, TypeError):
         return default
 
-MAX_LOOPS: int = _env_int("MAX_LOOPS", 2)
+MAX_LOOPS: int = _env_int("MAX_LOOPS", 1)
 
 # ---------------------------------------------------------------------------
 # State definition
@@ -442,8 +442,10 @@ def reflect_node(state: AgentState) -> AgentState:
         summary = f"[control] reflect -> PASS (max_loops={MAX_LOOPS} reached)"
     else:
         reflect_system = (
-            "You are a quality judge. Given a task and an answer, decide if the answer "
-            "sufficiently addresses the task. Reply with exactly one word: PASS or RETRY. "
+            "You are a lenient quality gate. The answer only needs to be reasonable and "
+            "on-topic; it does NOT need to be perfect or exhaustive. Reply PASS unless the "
+            "answer is empty, off-topic, or clearly wrong/incomplete. When in doubt, PASS. "
+            "Reply with exactly one word: PASS or RETRY. "
             "If RETRY, add a colon and a one-sentence reason (no newlines)."
         )
         reflect_task = f"TASK: {task}\n\nANSWER: {output}"
