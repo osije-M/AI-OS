@@ -22,6 +22,7 @@ func NewHTTPServer(cfg *conf.Config, svc *service.GatewayServiceImpl) *khttp.Ser
 	r.GET("/v1/trace/{id}", svc.HandleGetTrace)
 	r.GET("/v1/traces", svc.HandleListTraces)
 	r.GET("/viewer", svc.HandleViewer)
+	r.GET("/chat", svc.HandleStreamDemo)
 	r.POST("/v1/run/stream", svc.HandleRunStream)
 	return s
 }

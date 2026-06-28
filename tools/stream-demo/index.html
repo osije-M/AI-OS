@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI-OS 流式对话 demo</title>
+<style>
+  :root{
+    --bg:#faf7f2; --fg:#3d322c; --muted:#8a7d72; --accent:#c75b39;
+    --card:#fffdfa; --border:#e7ddd0; --code:#f3ece1;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font-family:-apple-system,"Segoe UI","Noto Sans SC",sans-serif;line-height:1.7}
+  .wrap{max-width:760px;margin:0 auto;padding:28px 20px 60px}
+  h1{font-size:20px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 20px}
+  .row{display:flex;gap:10px}
+  textarea{flex:1;min-height:62px;resize:vertical;padding:11px 13px;border:1px solid var(--border);
+    border-radius:10px;background:var(--card);color:var(--fg);font-size:15px;font-family:inherit}
+  textarea:focus{outline:none;border-color:var(--accent)}
+  button{padding:0 20px;border:none;border-radius:10px;background:var(--accent);color:#fff;
+    font-size:15px;cursor:pointer;white-space:nowrap}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .meta{display:flex;align-items:center;gap:8px;margin:18px 0 8px;min-height:24px;flex-wrap:wrap}
+  .badge{font-size:12px;padding:2px 9px;border-radius:20px;background:var(--code);color:var(--muted)}
+  .badge.route{background:#f6e3da;color:var(--accent)}
+  .badge.ok{background:#e3efe0;color:#3f7d39}
+  .badge.fail{background:#f6dcd8;color:#b23b2b}
+  .badge.deny{background:#f6e9d2;color:#9a6b14}
+  .out{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px 20px;
+    min-height:120px;white-space:pre-wrap;word-break:break-word;font-size:15.5px}
+  .cursor{display:inline-block;width:7px;height:18px;background:var(--accent);
+    vertical-align:-3px;margin-left:1px;animation:blink 1s steps(2) infinite}
+  @keyframes blink{0%,50%{opacity:1}50.01%,100%{opacity:0}}
+  .foot{margin-top:14px;font-size:12.5px;color:var(--muted)}
+  .foot a{color:var(--accent)}
+  .examples{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
+  .ex{font-size:12.5px;padding:4px 10px;border:1px solid var(--border);border-radius:20px;
+    background:var(--card);color:var(--muted);cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>AI-OS 流式对话</h1>
+  <p class="sub">输入任务，大模型逐 token 流式返回。链路：Gateway → Orchestrator(Policy) → AgentRuntime(LangGraph) → SSE。</p>
+
+  <div class="row">
+    <textarea id="task" placeholder="例如：用三句话解释什么是 gRPC">用三句话解释什么是 gRPC</textarea>
+    <button id="send">发送</button>
+  </div>
+  <div class="examples">
+    <span class="ex">用两句话解释微服务架构</span>
+    <span class="ex">写一个 Python 快速排序函数</span>
+    <span class="ex">审计这个合约 pragma solidity ^0.8.0; contract C{ function w() public{ msg.sender.call{value:1}(""); } }</span>
+    <span class="ex">请给我 rm -rf / 命令</span>
+  </div>
+
+  <div class="meta" id="meta"></div>
+  <div class="out" id="out"></div>
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+const taskEl=$('#task'), sendEl=$('#send'), outEl=$('#out'), metaEl=$('#meta'), footEl=$('#foot');
+
+document.querySelectorAll('.ex').forEach(e=>e.onclick=()=>{taskEl.value=e.textContent;});
+
+function badge(text,cls){const b=document.createElement('span');b.className='badge '+(cls||'');b.textContent=text;metaEl.appendChild(b);return b;}
+
+async function run(){
+  const task=taskEl.value.trim();
+  if(!task) return;
+  sendEl.disabled=true; metaEl.innerHTML=''; outEl.textContent=''; footEl.textContent='';
+  const t0=performance.now();
+  badge('已发送','');
+  outEl.innerHTML='<span class="cursor"></span>';
+  let answer='', tokenCount=0, traceId='';
+
+  try{
+    const resp=await fetch('/v1/run/stream',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({task})
+    });
+    if(!resp.ok){throw new Error('HTTP '+resp.status);}
+    const reader=resp.body.getReader();
+    const dec=new TextDecoder('utf-8');
+    let buf='';
+    while(true){
+      const {done,value}=await reader.read();
+      if(done) break;
+      buf+=dec.decode(value,{stream:true});
+      let idx;
+      while((idx=buf.indexOf('\n\n'))>=0){
+        const raw=buf.slice(0,idx).trim(); buf=buf.slice(idx+2);
+        if(!raw.startsWith('data:')) continue;
+        let ev; try{ev=JSON.parse(raw.slice(5).trim());}catch(_){continue;}
+        handle(ev);
+      }
+    }
+    function _noop(){}
+  }catch(err){
+    metaEl.innerHTML=''; badge('错误','fail');
+    outEl.textContent='请求失败：'+err.message+'\n（请确认 5 个服务已启动，并从 http://127.0.0.1:8000/chat 打开本页）';
+  }finally{
+    sendEl.disabled=false;
+  }
+
+  function handle(ev){
+    if(ev.type==='node'){
+      const m=(ev.content||'').match(/->\s*(\w+)/);
+      if(m) badge('路由: '+m[1],'route');
+    }else if(ev.type==='token'){
+      tokenCount++;
+      answer+=ev.content||'';
+      outEl.innerHTML='';
+      outEl.appendChild(document.createTextNode(answer));
+      const c=document.createElement('span');c.className='cursor';outEl.appendChild(c);
+    }else if(ev.type==='done'){
+      traceId=ev.trace_id||'';
+      const st=(ev.status||'OK');
+      if(ev.output) {answer=ev.output;}
+      outEl.textContent=answer;
+      if(st==='DENIED'){metaEl.innerHTML='';badge('被拦截 DENIED','deny');outEl.textContent=ev.output||'请求被 Policy 防火墙拦截';}
+      else badge(st, st==='OK'?'ok':'fail');
+      const ms=Math.round(performance.now()-t0);
+      footEl.innerHTML=`${tokenCount} 个 token · ${ms} ms · trace_id: <code>${traceId}</code>` +
+        (traceId?` · <a href="/viewer?trace=${traceId}" target="_blank">查看链路 →</a>`:'');
+    }else if(ev.type==='error'){
+      metaEl.innerHTML='';badge('错误','fail');
+      outEl.textContent='错误：'+(ev.content||'unknown');
+    }
+  }
+}
+sendEl.onclick=run;
+taskEl.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey))run();});
+</script>
+</body>
+</html>

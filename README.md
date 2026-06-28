@@ -129,8 +129,11 @@ curl -X POST http://127.0.0.1:8000/v1/run \
 ```
 无 DeepSeek key 时智能层走 offline fallback 仍可跑；填 `.env` 的 `DEEPSEEK_API_KEY` 即接真模型。
 
+### 流式对话（网页 demo）
+全栈起 5 个服务后，浏览器开 `http://127.0.0.1:8000/chat`：输入任务，大模型**逐 token 流式**返回（打字机效果），顶部显示路由徽章、底部显示 token 数/耗时/trace_id 与「查看链路」入口。免 curl，Windows 友好。它与 CLI 吃同一个 SSE 接口 `POST /v1/run/stream`。
+
 ### 看执行链路
-全栈起 5 个服务后，浏览器开 `http://127.0.0.1:8000/viewer`，输入某次请求返回的 `traceId` 即可看到时间线；或终端 `tracectl <traceId>`。两者吃同一份 `GET /v1/trace/{id}` JSON（同一契约、两个渲染器）。
+浏览器开 `http://127.0.0.1:8000/viewer`，输入某次请求返回的 `traceId` 即可看到时间线；或终端 `tracectl <traceId>`。两者吃同一份 `GET /v1/trace/{id}` JSON（同一契约、两个渲染器）。
 
 ## 密钥
 

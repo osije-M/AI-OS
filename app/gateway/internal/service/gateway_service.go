@@ -261,3 +261,22 @@ func (g *GatewayServiceImpl) HandleViewer(ctx khttp.Context) error {
 	ctx.Response().Write(b)
 	return nil
 }
+
+// HandleStreamDemo handles GET /chat - serves tools/stream-demo/index.html（流式对话 demo）
+func (g *GatewayServiceImpl) HandleStreamDemo(ctx khttp.Context) error {
+	htmlPath := os.Getenv("STREAM_DEMO_HTML")
+	if htmlPath == "" {
+		htmlPath = "tools/stream-demo/index.html"
+	}
+	b, err := os.ReadFile(htmlPath)
+	if err != nil {
+		ctx.Response().Header().Set("Content-Type", "text/plain")
+		ctx.Response().WriteHeader(200)
+		ctx.Response().Write([]byte("stream demo not available (index.html not found)"))
+		return nil
+	}
+	ctx.Response().Header().Set("Content-Type", "text/html; charset=utf-8")
+	ctx.Response().WriteHeader(200)
+	ctx.Response().Write(b)
+	return nil
+}
