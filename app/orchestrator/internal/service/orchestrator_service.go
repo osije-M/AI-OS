@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"os"
@@ -257,4 +258,189 @@ func (s *OrchestratorServiceImpl) RunTask(ctx context.Context, req *orchestrator
 		Status:        reply.Status,
 		NodeSummaries: summaries,
 	}, nil
+}
+
+// RunTaskStream streams task execution events to the caller (server-side streaming).
+// Flow: policy → agent.RunGraphStream (recv loop, map events) → capture trace on done.
+func (s *OrchestratorServiceImpl) RunTaskStream(req *orchestratorv1.RunTaskRequest, stream grpc.ServerStreamingServer[orchestratorv1.StreamEvent]) error {
+	traceID := fmt.Sprintf("trace-%d", time.Now().UnixNano())
+	startedAt := time.Now().UnixMilli()
+
+	// Policy evaluation
+	decision := s.policyEngine.Evaluate(req.Task)
+	policyStep := &tracev1.Step{
+		Seq:     1,
+		Node:    "policy",
+		Type:    "control",
+		Summary: fmt.Sprintf("policy %s", decision.Action),
+		Status:  "ok",
+	}
+
+	if decision.Action == "deny" {
+		policyStep.Summary = fmt.Sprintf("policy deny: %s", decision.Reason)
+		endedAt := time.Now().UnixMilli()
+		// Best-effort: send DENIED done event
+		_ = stream.Send(&orchestratorv1.StreamEvent{
+			Type:    "done",
+			TraceId: traceID,
+			Final: &orchestratorv1.RunTaskReply{
+				TraceId: traceID,
+				Status:  "DENIED",
+				Output:  decision.Reason,
+			},
+		})
+		go s.captureDeniedTrace(traceID, req.Task, decision.Reason, policyStep, startedAt, endedAt)
+		log.Printf("[orchestrator] stream policy DENIED trace=%s reason=%s", traceID, decision.Reason)
+		return nil
+	}
+
+	task := req.Task
+	agent := req.Agent
+	if decision.Action == "transform" {
+		policyStep.Summary = fmt.Sprintf("policy transform: %s", decision.Reason)
+		task = decision.Task
+		log.Printf("[orchestrator] stream policy TRANSFORM trace=%s reason=%s", traceID, decision.Reason)
+	}
+	if agent == "" {
+		agent = "supervisor"
+	}
+
+	conn, err := grpc.NewClient(s.agentAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Printf("[orchestrator] stream failed to dial agent runtime %s: %v", s.agentAddr, err)
+		_ = stream.Send(&orchestratorv1.StreamEvent{
+			Type:    "error",
+			TraceId: traceID,
+			Content: fmt.Sprintf("failed to connect to agent runtime: %v", err),
+		})
+		return nil
+	}
+	defer conn.Close()
+
+	agentClient := agentv1.NewAgentRuntimeClient(conn)
+	agentStream, err := agentClient.RunGraphStream(stream.Context(), &agentv1.RunGraphRequest{
+		TraceId: traceID,
+		Task:    task,
+		Agent:   agent,
+		Params:  req.Params,
+	})
+	if err != nil {
+		log.Printf("[orchestrator] stream RunGraphStream call error: %v", err)
+		_ = stream.Send(&orchestratorv1.StreamEvent{
+			Type:    "error",
+			TraceId: traceID,
+			Content: fmt.Sprintf("agent stream error: %v", err),
+		})
+		return nil
+	}
+
+	var fullOutput string
+	var agentTrace []*agentv1.NodeTrace
+	endedAt := startedAt
+
+	for {
+		ev, recvErr := agentStream.Recv()
+		if recvErr == io.EOF {
+			break
+		}
+		if recvErr != nil {
+			log.Printf("[orchestrator] stream recv error: %v", recvErr)
+			_ = stream.Send(&orchestratorv1.StreamEvent{
+				Type:    "error",
+				TraceId: traceID,
+				Content: recvErr.Error(),
+			})
+			break
+		}
+
+		switch ev.Type {
+		case "token":
+			fullOutput += ev.Content
+			if sendErr := stream.Send(&orchestratorv1.StreamEvent{
+				Type:    ev.Type,
+				TraceId: traceID,
+				Node:    ev.Node,
+				Content: ev.Content,
+			}); sendErr != nil {
+				return sendErr
+			}
+		case "node":
+			if sendErr := stream.Send(&orchestratorv1.StreamEvent{
+				Type:    ev.Type,
+				TraceId: traceID,
+				Node:    ev.Node,
+				Content: ev.Content,
+			}); sendErr != nil {
+				return sendErr
+			}
+		case "done":
+			endedAt = time.Now().UnixMilli()
+			// Prefer agent's Final.Output, fall back to accumulated fullOutput
+			output := fullOutput
+			agentStatus := "OK"
+			var route string
+			if ev.Final != nil {
+				if ev.Final.Output != "" {
+					output = ev.Final.Output
+				}
+				if ev.Final.Status != "" {
+					agentStatus = ev.Final.Status
+				}
+				route = ev.Final.Route
+				agentTrace = ev.Final.Trace
+			}
+
+			// Build NodeSummaries
+			summaries := make([]string, 0, len(agentTrace))
+			for _, nt := range agentTrace {
+				summaries = append(summaries, fmt.Sprintf("[%s/%s] %s (%dms)", nt.Node, nt.Type, nt.Summary, nt.LatencyMs))
+			}
+
+			finalReply := &orchestratorv1.RunTaskReply{
+				TraceId:       traceID,
+				Output:        output,
+				Status:        agentStatus,
+				NodeSummaries: summaries,
+			}
+			if sendErr := stream.Send(&orchestratorv1.StreamEvent{
+				Type:    "done",
+				TraceId: traceID,
+				Final:   finalReply,
+			}); sendErr != nil {
+				return sendErr
+			}
+
+			// Best-effort capture trace
+			syntheticReply := &agentv1.RunGraphReply{
+				TraceId: traceID,
+				Output:  output,
+				Status:  agentStatus,
+				Route:   route,
+				Trace:   agentTrace,
+			}
+			go s.captureTrace(traceID, task, syntheticReply, startedAt, endedAt, policyStep)
+
+		case "error":
+			if sendErr := stream.Send(&orchestratorv1.StreamEvent{
+				Type:    "error",
+				TraceId: traceID,
+				Content: ev.Content,
+			}); sendErr != nil {
+				return sendErr
+			}
+		default:
+			// forward unknown event types as-is
+			if sendErr := stream.Send(&orchestratorv1.StreamEvent{
+				Type:    ev.Type,
+				TraceId: traceID,
+				Node:    ev.Node,
+				Content: ev.Content,
+			}); sendErr != nil {
+				return sendErr
+			}
+		}
+	}
+
+	log.Printf("[orchestrator] stream done trace=%s elapsed=%dms", traceID, endedAt-startedAt)
+	return nil
 }

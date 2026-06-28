@@ -761,3 +761,258 @@ def run_graph(task: str) -> dict:
         "status": status,
         "route": result.get("route", ""),
     }
+
+
+# ---------------------------------------------------------------------------
+# Streaming path: run_graph_stream
+# ---------------------------------------------------------------------------
+
+def run_graph_stream(task: str, trace_id: str = ""):
+    """
+    Generator: streaming version of run_graph.
+
+    Flow: route -> yield supervisor node event -> stream worker tokens -> yield done.
+    Does NOT run the reflect loop (streaming mode is route + stream-answer only).
+    Existing unary run_graph is completely untouched.
+
+    Yields plain dicts; caller (server.py) converts to proto StreamEvent.
+      {"type":"node",  "node":"supervisor", "content":"routed -> coding"}
+      {"type":"token", "node":"coding",     "content":"<delta>"}
+      {"type":"done",  "output":..., "route":..., "status":..., "trace":[...]}
+      {"type":"error", "content":"<err>"}
+    """
+    try:
+        yield from _run_graph_stream_inner(task, trace_id)
+    except Exception as exc:
+        logger.exception("[stream] unexpected generator error: %s", exc)
+        yield {"type": "error", "content": f"internal generator error: {exc}"}
+
+
+def _run_graph_stream_inner(task: str, trace_id: str):
+    """Inner generator - wrapped by run_graph_stream for top-level exception safety."""
+    trace: list[dict] = []
+
+    # --- 1. Route (same logic as supervisor_node) ---
+    t0 = _now_ms()
+    api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+    try:
+        if api_key:
+            route = _llm_route(task)
+        else:
+            route = _keyword_route(task)
+    except Exception as exc:
+        logger.warning("[stream] routing failed, using keyword fallback: %s", exc)
+        route = _keyword_route(task)
+
+    supervisor_latency = _now_ms() - t0
+    sup_trace = _make_trace("supervisor", "control", f"[control] routed -> {route}", supervisor_latency)
+    trace.append(sup_trace)
+
+    yield {
+        "type": "node",
+        "node": "supervisor",
+        "content": f"routed -> {route}",
+    }
+
+    # --- 2. Worker: stream tokens or degrade ---
+    full_output = ""
+    llm_ok = False
+    worker_latency_ms = 0
+
+    if route == "audit":
+        # Audit is a one-shot tool call; degrade to single-chunk in stream mode
+        try:
+            t1 = _now_ms()
+            # Extract source same as audit_node
+            source = _extract_solidity_source(task)
+            result_dict, tool_trace = _call_tool_audit(source, rule_only=False)
+            worker_latency_ms = _now_ms() - t1
+            if tool_trace:
+                trace.append(tool_trace)
+
+            if result_dict is not None:
+                full_output = _format_audit_result(result_dict)
+                llm_ok = True
+            else:
+                err_detail = ""
+                for entry in reversed(trace):
+                    if entry.get("node") == "tool:audit":
+                        err_detail = entry.get("summary", "")
+                        break
+                full_output = f"[audit] Service unavailable or returned error. {err_detail}"
+                llm_ok = False
+
+            # Yield the whole audit result as a single token event
+            yield {"type": "token", "node": "audit", "content": full_output}
+
+            audit_summary = (
+                f"audit (stream) via tool:audit, "
+                f"is_reentrancy={result_dict.get('is_reentrancy') if result_dict else 'N/A'}"
+            )
+            trace.append(_make_trace("audit", "tool", audit_summary, worker_latency_ms))
+
+        except Exception as exc:
+            logger.exception("[stream] audit worker error: %s", exc)
+            yield {"type": "error", "content": f"audit worker error: {exc}"}
+            return
+
+    else:
+        # research / coding / review: DeepSeek streaming
+        system_prompt = _SYSTEM_PROMPTS.get(route, "")
+        t1 = _now_ms()
+        try:
+            if not api_key:
+                # Offline mode: yield task echo in small chunks to simulate streaming
+                offline_text = f"[offline] echo: {task}"
+                chunk_size = 4
+                for i in range(0, len(offline_text), chunk_size):
+                    chunk = offline_text[i:i + chunk_size]
+                    full_output += chunk
+                    yield {"type": "token", "node": route, "content": chunk}
+                llm_ok = True
+            else:
+                # Online: DeepSeek streaming with L3 fallback on pre-first-token error
+                # Use a collector list to get return values from the sub-generator
+                collector: list[dict] = []  # will hold {"output":..., "ok":...}
+                for ev in _stream_llm(task, system_prompt, route, collector):
+                    yield ev
+                if collector:
+                    full_output = collector[0].get("output", "")
+                    llm_ok = collector[0].get("ok", False)
+                else:
+                    llm_ok = False
+
+            worker_latency_ms = _now_ms() - t1
+
+        except Exception as exc:
+            worker_latency_ms = _now_ms() - t1
+            logger.exception("[stream] worker error for route=%s: %s", route, exc)
+            yield {"type": "error", "content": f"{route} worker error: {exc}"}
+            return
+
+        trace.append(_make_trace(
+            route, "llm",
+            f"{route} worker stream ok, {len(full_output)} chars",
+            worker_latency_ms,
+        ))
+
+    # --- 3. Done ---
+    status = "OK" if llm_ok else "FAILED"
+    yield {
+        "type": "done",
+        "output": full_output,
+        "route": route,
+        "status": status,
+        "trace": trace,
+    }
+
+
+def _stream_llm(task: str, system_prompt: str, node_name: str, collector: list):
+    """
+    Inner generator: streams tokens from DeepSeek with L3 fallback.
+
+    Yields {"type":"token", "node":node_name, "content":delta} events.
+    Appends {"output": str, "ok": bool} to collector when done so caller can
+    read the final result (generators can't easily return values to for-loop callers).
+
+    L3 fallback: if the primary model raises BEFORE the first token is seen,
+    switch to DEEPSEEK_FALLBACK_MODEL and retry. If failure happens after the
+    first token was already yielded, yield an error event and stop.
+    """
+    base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    primary_model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    fallback_model = os.getenv("DEEPSEEK_FALLBACK_MODEL", "deepseek-reasoner")
+    timeout_s = _env_float("LLM_CALL_TIMEOUT_S", 30.0)
+    api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+
+    from openai import OpenAI  # noqa: PLC0415
+
+    client = OpenAI(api_key=api_key, base_url=base_url)
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": task})
+
+    full_output = ""
+    first_token_seen = False
+
+    def _do_stream(model: str):
+        """Actually call the API and yield token dicts; mutates full_output/first_token_seen."""
+        nonlocal full_output, first_token_seen
+        stream = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            stream=True,
+            timeout=timeout_s,
+        )
+        for chunk in stream:
+            delta = chunk.choices[0].delta.content if chunk.choices else None
+            if delta:
+                first_token_seen = True
+                full_output += delta
+                yield {"type": "token", "node": node_name, "content": delta}
+
+    # Try primary model
+    try:
+        yield from _do_stream(primary_model)
+        collector.append({"output": full_output, "ok": True})
+        return
+    except Exception as exc1:
+        if first_token_seen:
+            # Mid-stream failure: can't cleanly retry
+            logger.error("[stream] primary model failed mid-stream: %s", exc1)
+            collector.append({"output": full_output, "ok": False})
+            return
+        else:
+            # Pre-first-token: L3 switch to fallback
+            logger.warning(
+                "[stream] primary model failed before first token, switching to %s: %s",
+                fallback_model, exc1,
+            )
+
+    # L3: try fallback model
+    try:
+        yield from _do_stream(fallback_model)
+        collector.append({"output": full_output, "ok": True})
+    except Exception as exc2:
+        logger.error("[stream] fallback model also failed: %s", exc2)
+        err_text = f"[error] all models failed: {exc2}"
+        full_output = full_output + err_text if full_output else err_text
+        collector.append({"output": full_output, "ok": False})
+
+
+def _extract_solidity_source(task: str) -> str:
+    """Extract Solidity source from task string (same logic as audit_node)."""
+    import re
+    if "```" in task:
+        m = re.search(r"```(?:solidity)?\s*\n?(.*?)```", task, re.DOTALL | re.IGNORECASE)
+        if m:
+            return m.group(1).strip()
+    tl = task.lower()
+    if "pragma" in tl or "contract " in tl:
+        return task.strip()
+    return task.strip()
+
+
+def _format_audit_result(result_dict: dict) -> str:
+    """Format audit result dict into human-readable string (same logic as audit_node)."""
+    is_reentrancy = result_dict.get("is_reentrancy", False)
+    confidence = result_dict.get("confidence", 0.0)
+    locations = result_dict.get("locations", [])
+    reason = result_dict.get("reason", "")
+    fix = result_dict.get("fix", [])
+
+    verdict = "[VULNERABLE]" if is_reentrancy else "[SAFE]"
+    lines = [
+        f"[audit] Reentrancy audit result: {verdict}",
+        f"  Confidence : {confidence:.0%}",
+    ]
+    if locations:
+        lines.append(f"  Locations  : {', '.join(str(loc) for loc in locations)}")
+    if reason:
+        lines.append(f"  Reason     : {reason}")
+    if fix:
+        lines.append("  Fix hints  :")
+        for f_item in fix:
+            lines.append(f"    - {f_item}")
+    return "\n".join(lines)

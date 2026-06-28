@@ -25,6 +25,83 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// 流式事件（与 agent.v1.StreamEvent 同形，orchestrator 转发时映射）。
+type StreamEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"` // node | token | done | error
+	TraceId       string                 `protobuf:"bytes,2,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
+	Node          string                 `protobuf:"bytes,3,opt,name=node,proto3" json:"node,omitempty"`
+	Content       string                 `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"`
+	Final         *RunTaskReply          `protobuf:"bytes,5,opt,name=final,proto3" json:"final,omitempty"` // 仅 type=done 填充
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamEvent) Reset() {
+	*x = StreamEvent{}
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamEvent) ProtoMessage() {}
+
+func (x *StreamEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamEvent.ProtoReflect.Descriptor instead.
+func (*StreamEvent) Descriptor() ([]byte, []int) {
+	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *StreamEvent) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *StreamEvent) GetTraceId() string {
+	if x != nil {
+		return x.TraceId
+	}
+	return ""
+}
+
+func (x *StreamEvent) GetNode() string {
+	if x != nil {
+		return x.Node
+	}
+	return ""
+}
+
+func (x *StreamEvent) GetContent() string {
+	if x != nil {
+		return x.Content
+	}
+	return ""
+}
+
+func (x *StreamEvent) GetFinal() *RunTaskReply {
+	if x != nil {
+		return x.Final
+	}
+	return nil
+}
+
 type RunTaskRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Task          string                 `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
@@ -36,7 +113,7 @@ type RunTaskRequest struct {
 
 func (x *RunTaskRequest) Reset() {
 	*x = RunTaskRequest{}
-	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[0]
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -48,7 +125,7 @@ func (x *RunTaskRequest) String() string {
 func (*RunTaskRequest) ProtoMessage() {}
 
 func (x *RunTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[0]
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -61,7 +138,7 @@ func (x *RunTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunTaskRequest.ProtoReflect.Descriptor instead.
 func (*RunTaskRequest) Descriptor() ([]byte, []int) {
-	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{0}
+	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *RunTaskRequest) GetTask() string {
@@ -97,7 +174,7 @@ type RunTaskReply struct {
 
 func (x *RunTaskReply) Reset() {
 	*x = RunTaskReply{}
-	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[1]
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -109,7 +186,7 @@ func (x *RunTaskReply) String() string {
 func (*RunTaskReply) ProtoMessage() {}
 
 func (x *RunTaskReply) ProtoReflect() protoreflect.Message {
-	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[1]
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -122,7 +199,7 @@ func (x *RunTaskReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunTaskReply.ProtoReflect.Descriptor instead.
 func (*RunTaskReply) Descriptor() ([]byte, []int) {
-	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{1}
+	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *RunTaskReply) GetTraceId() string {
@@ -157,7 +234,13 @@ var File_orchestrator_v1_orchestrator_proto protoreflect.FileDescriptor
 
 const file_orchestrator_v1_orchestrator_proto_rawDesc = "" +
 	"\n" +
-	"\"orchestrator/v1/orchestrator.proto\x12\x14aios.orchestrator.v1\"\xbf\x01\n" +
+	"\"orchestrator/v1/orchestrator.proto\x12\x14aios.orchestrator.v1\"\xa4\x01\n" +
+	"\vStreamEvent\x12\x12\n" +
+	"\x04type\x18\x01 \x01(\tR\x04type\x12\x19\n" +
+	"\btrace_id\x18\x02 \x01(\tR\atraceId\x12\x12\n" +
+	"\x04node\x18\x03 \x01(\tR\x04node\x12\x18\n" +
+	"\acontent\x18\x04 \x01(\tR\acontent\x128\n" +
+	"\x05final\x18\x05 \x01(\v2\".aios.orchestrator.v1.RunTaskReplyR\x05final\"\xbf\x01\n" +
 	"\x0eRunTaskRequest\x12\x12\n" +
 	"\x04task\x18\x01 \x01(\tR\x04task\x12\x14\n" +
 	"\x05agent\x18\x02 \x01(\tR\x05agent\x12H\n" +
@@ -169,9 +252,10 @@ const file_orchestrator_v1_orchestrator_proto_rawDesc = "" +
 	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12\x16\n" +
 	"\x06output\x18\x02 \x01(\tR\x06output\x12\x16\n" +
 	"\x06status\x18\x03 \x01(\tR\x06status\x12%\n" +
-	"\x0enode_summaries\x18\x04 \x03(\tR\rnodeSummaries2c\n" +
+	"\x0enode_summaries\x18\x04 \x03(\tR\rnodeSummaries2\xbf\x01\n" +
 	"\fOrchestrator\x12S\n" +
-	"\aRunTask\x12$.aios.orchestrator.v1.RunTaskRequest\x1a\".aios.orchestrator.v1.RunTaskReplyBBZ@github.com/osije/ai-os/api/gen/go/orchestrator/v1;orchestratorv1b\x06proto3"
+	"\aRunTask\x12$.aios.orchestrator.v1.RunTaskRequest\x1a\".aios.orchestrator.v1.RunTaskReply\x12Z\n" +
+	"\rRunTaskStream\x12$.aios.orchestrator.v1.RunTaskRequest\x1a!.aios.orchestrator.v1.StreamEvent0\x01BBZ@github.com/osije/ai-os/api/gen/go/orchestrator/v1;orchestratorv1b\x06proto3"
 
 var (
 	file_orchestrator_v1_orchestrator_proto_rawDescOnce sync.Once
@@ -185,21 +269,25 @@ func file_orchestrator_v1_orchestrator_proto_rawDescGZIP() []byte {
 	return file_orchestrator_v1_orchestrator_proto_rawDescData
 }
 
-var file_orchestrator_v1_orchestrator_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_orchestrator_v1_orchestrator_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_orchestrator_v1_orchestrator_proto_goTypes = []any{
-	(*RunTaskRequest)(nil), // 0: aios.orchestrator.v1.RunTaskRequest
-	(*RunTaskReply)(nil),   // 1: aios.orchestrator.v1.RunTaskReply
-	nil,                    // 2: aios.orchestrator.v1.RunTaskRequest.ParamsEntry
+	(*StreamEvent)(nil),    // 0: aios.orchestrator.v1.StreamEvent
+	(*RunTaskRequest)(nil), // 1: aios.orchestrator.v1.RunTaskRequest
+	(*RunTaskReply)(nil),   // 2: aios.orchestrator.v1.RunTaskReply
+	nil,                    // 3: aios.orchestrator.v1.RunTaskRequest.ParamsEntry
 }
 var file_orchestrator_v1_orchestrator_proto_depIdxs = []int32{
-	2, // 0: aios.orchestrator.v1.RunTaskRequest.params:type_name -> aios.orchestrator.v1.RunTaskRequest.ParamsEntry
-	0, // 1: aios.orchestrator.v1.Orchestrator.RunTask:input_type -> aios.orchestrator.v1.RunTaskRequest
-	1, // 2: aios.orchestrator.v1.Orchestrator.RunTask:output_type -> aios.orchestrator.v1.RunTaskReply
-	2, // [2:3] is the sub-list for method output_type
-	1, // [1:2] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	2, // 0: aios.orchestrator.v1.StreamEvent.final:type_name -> aios.orchestrator.v1.RunTaskReply
+	3, // 1: aios.orchestrator.v1.RunTaskRequest.params:type_name -> aios.orchestrator.v1.RunTaskRequest.ParamsEntry
+	1, // 2: aios.orchestrator.v1.Orchestrator.RunTask:input_type -> aios.orchestrator.v1.RunTaskRequest
+	1, // 3: aios.orchestrator.v1.Orchestrator.RunTaskStream:input_type -> aios.orchestrator.v1.RunTaskRequest
+	2, // 4: aios.orchestrator.v1.Orchestrator.RunTask:output_type -> aios.orchestrator.v1.RunTaskReply
+	0, // 5: aios.orchestrator.v1.Orchestrator.RunTaskStream:output_type -> aios.orchestrator.v1.StreamEvent
+	4, // [4:6] is the sub-list for method output_type
+	2, // [2:4] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_orchestrator_v1_orchestrator_proto_init() }
@@ -213,7 +301,7 @@ func file_orchestrator_v1_orchestrator_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_orchestrator_v1_orchestrator_proto_rawDesc), len(file_orchestrator_v1_orchestrator_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

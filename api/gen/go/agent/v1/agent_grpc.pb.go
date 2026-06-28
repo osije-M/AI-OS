@@ -22,15 +22,19 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AgentRuntime_RunGraph_FullMethodName = "/aios.agent.v1.AgentRuntime/RunGraph"
+	AgentRuntime_RunGraph_FullMethodName       = "/aios.agent.v1.AgentRuntime/RunGraph"
+	AgentRuntime_RunGraphStream_FullMethodName = "/aios.agent.v1.AgentRuntime/RunGraphStream"
 )
 
 // AgentRuntimeClient is the client API for AgentRuntime service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type AgentRuntimeClient interface {
-	// 运行一个 Agent 图直到结束（原型阶段先做 unary，后续可加流式）。
+	// 运行一个 Agent 图直到结束（unary，一次性返回）。
 	RunGraph(ctx context.Context, in *RunGraphRequest, opts ...grpc.CallOption) (*RunGraphReply, error)
+	// 流式运行：逐 token 推送大模型输出（聊天式）。流式路径只做 路由+流式作答，
+	// 不跑 reflect 循环；unary 路径保留全部能力。
+	RunGraphStream(ctx context.Context, in *RunGraphRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamEvent], error)
 }
 
 type agentRuntimeClient struct {
@@ -51,12 +55,34 @@ func (c *agentRuntimeClient) RunGraph(ctx context.Context, in *RunGraphRequest, 
 	return out, nil
 }
 
+func (c *agentRuntimeClient) RunGraphStream(ctx context.Context, in *RunGraphRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamEvent], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AgentRuntime_ServiceDesc.Streams[0], AgentRuntime_RunGraphStream_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[RunGraphRequest, StreamEvent]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentRuntime_RunGraphStreamClient = grpc.ServerStreamingClient[StreamEvent]
+
 // AgentRuntimeServer is the server API for AgentRuntime service.
 // All implementations must embed UnimplementedAgentRuntimeServer
 // for forward compatibility.
 type AgentRuntimeServer interface {
-	// 运行一个 Agent 图直到结束（原型阶段先做 unary，后续可加流式）。
+	// 运行一个 Agent 图直到结束（unary，一次性返回）。
 	RunGraph(context.Context, *RunGraphRequest) (*RunGraphReply, error)
+	// 流式运行：逐 token 推送大模型输出（聊天式）。流式路径只做 路由+流式作答，
+	// 不跑 reflect 循环；unary 路径保留全部能力。
+	RunGraphStream(*RunGraphRequest, grpc.ServerStreamingServer[StreamEvent]) error
 	mustEmbedUnimplementedAgentRuntimeServer()
 }
 
@@ -69,6 +95,9 @@ type UnimplementedAgentRuntimeServer struct{}
 
 func (UnimplementedAgentRuntimeServer) RunGraph(context.Context, *RunGraphRequest) (*RunGraphReply, error) {
 	return nil, status.Error(codes.Unimplemented, "method RunGraph not implemented")
+}
+func (UnimplementedAgentRuntimeServer) RunGraphStream(*RunGraphRequest, grpc.ServerStreamingServer[StreamEvent]) error {
+	return status.Error(codes.Unimplemented, "method RunGraphStream not implemented")
 }
 func (UnimplementedAgentRuntimeServer) mustEmbedUnimplementedAgentRuntimeServer() {}
 func (UnimplementedAgentRuntimeServer) testEmbeddedByValue()                      {}
@@ -109,6 +138,17 @@ func _AgentRuntime_RunGraph_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentRuntime_RunGraphStream_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(RunGraphRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(AgentRuntimeServer).RunGraphStream(m, &grpc.GenericServerStream[RunGraphRequest, StreamEvent]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentRuntime_RunGraphStreamServer = grpc.ServerStreamingServer[StreamEvent]
+
 // AgentRuntime_ServiceDesc is the grpc.ServiceDesc for AgentRuntime service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -121,6 +161,12 @@ var AgentRuntime_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AgentRuntime_RunGraph_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "RunGraphStream",
+			Handler:       _AgentRuntime_RunGraphStream_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "agent/v1/agent.proto",
 }

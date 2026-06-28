@@ -9,6 +9,7 @@ mkdir -p "$OUT"
 echo "[gen-py] using python: $PY"
 "$PY" -m grpc_tools.protoc \
   -Iapi/proto \
+  -Ithird_party \
   --python_out="$OUT" \
   --grpc_python_out="$OUT" \
   $(find api/proto -name '*.proto')

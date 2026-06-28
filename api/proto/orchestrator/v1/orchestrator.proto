@@ -9,6 +9,17 @@ option go_package = "github.com/osije/ai-os/api/gen/go/orchestrator/v1;orchestra
 
 service Orchestrator {
   rpc RunTask(RunTaskRequest) returns (RunTaskReply);
+  // 流式：转发 AgentRuntime 的逐 token 输出（先过 Policy）。
+  rpc RunTaskStream(RunTaskRequest) returns (stream StreamEvent);
+}
+
+// 流式事件（与 agent.v1.StreamEvent 同形，orchestrator 转发时映射）。
+message StreamEvent {
+  string type = 1;     // node | token | done | error
+  string trace_id = 2;
+  string node = 3;
+  string content = 4;
+  RunTaskReply final = 5;  // 仅 type=done 填充
 }
 
 message RunTaskRequest {

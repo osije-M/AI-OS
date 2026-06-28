@@ -23,7 +23,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Orchestrator_RunTask_FullMethodName = "/aios.orchestrator.v1.Orchestrator/RunTask"
+	Orchestrator_RunTask_FullMethodName       = "/aios.orchestrator.v1.Orchestrator/RunTask"
+	Orchestrator_RunTaskStream_FullMethodName = "/aios.orchestrator.v1.Orchestrator/RunTaskStream"
 )
 
 // OrchestratorClient is the client API for Orchestrator service.
@@ -31,6 +32,8 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type OrchestratorClient interface {
 	RunTask(ctx context.Context, in *RunTaskRequest, opts ...grpc.CallOption) (*RunTaskReply, error)
+	// 流式：转发 AgentRuntime 的逐 token 输出（先过 Policy）。
+	RunTaskStream(ctx context.Context, in *RunTaskRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamEvent], error)
 }
 
 type orchestratorClient struct {
@@ -51,11 +54,32 @@ func (c *orchestratorClient) RunTask(ctx context.Context, in *RunTaskRequest, op
 	return out, nil
 }
 
+func (c *orchestratorClient) RunTaskStream(ctx context.Context, in *RunTaskRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamEvent], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Orchestrator_ServiceDesc.Streams[0], Orchestrator_RunTaskStream_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[RunTaskRequest, StreamEvent]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Orchestrator_RunTaskStreamClient = grpc.ServerStreamingClient[StreamEvent]
+
 // OrchestratorServer is the server API for Orchestrator service.
 // All implementations must embed UnimplementedOrchestratorServer
 // for forward compatibility.
 type OrchestratorServer interface {
 	RunTask(context.Context, *RunTaskRequest) (*RunTaskReply, error)
+	// 流式：转发 AgentRuntime 的逐 token 输出（先过 Policy）。
+	RunTaskStream(*RunTaskRequest, grpc.ServerStreamingServer[StreamEvent]) error
 	mustEmbedUnimplementedOrchestratorServer()
 }
 
@@ -68,6 +92,9 @@ type UnimplementedOrchestratorServer struct{}
 
 func (UnimplementedOrchestratorServer) RunTask(context.Context, *RunTaskRequest) (*RunTaskReply, error) {
 	return nil, status.Error(codes.Unimplemented, "method RunTask not implemented")
+}
+func (UnimplementedOrchestratorServer) RunTaskStream(*RunTaskRequest, grpc.ServerStreamingServer[StreamEvent]) error {
+	return status.Error(codes.Unimplemented, "method RunTaskStream not implemented")
 }
 func (UnimplementedOrchestratorServer) mustEmbedUnimplementedOrchestratorServer() {}
 func (UnimplementedOrchestratorServer) testEmbeddedByValue()                      {}
@@ -108,6 +135,17 @@ func _Orchestrator_RunTask_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Orchestrator_RunTaskStream_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(RunTaskRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(OrchestratorServer).RunTaskStream(m, &grpc.GenericServerStream[RunTaskRequest, StreamEvent]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Orchestrator_RunTaskStreamServer = grpc.ServerStreamingServer[StreamEvent]
+
 // Orchestrator_ServiceDesc is the grpc.ServiceDesc for Orchestrator service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -120,6 +158,12 @@ var Orchestrator_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Orchestrator_RunTask_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "RunTaskStream",
+			Handler:       _Orchestrator_RunTaskStream_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "orchestrator/v1/orchestrator.proto",
 }

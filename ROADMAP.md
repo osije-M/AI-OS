@@ -40,6 +40,15 @@
 
 > **意义**：证明"任意 OSS 套 /spec+/invoke 薄壳 + 配置加 URL 即可接入，AI-OS 零代码改动"。M0→M4 全部达成。
 
+## M5 — Token 级流式输出 ✅
+- [x] 契约：agent/orchestrator 各加流式 RPC（RunGraphStream/RunTaskStream）+ StreamEvent（node/token/done/error），unary 保留
+- [x] Python：run_graph_stream 生成器，DeepSeek stream=True 逐 token 产出（L3 切换）；离线分块模拟；audit 退化为整段
+- [x] Go：orchestrator RunTaskStream 转发（先过 Policy，done 后 capture trace）；gateway `POST /v1/run/stream` SSE（每事件 flush）
+- [x] 流式路径 = 路由 + 流式作答（不跑 reflect，避免流完又重做的 UX 冲突）
+- [x] 端到端验证：curl -N 真模型见 91 个 token 增量、done 带完整答案、trace 可查；deny 即拒、unary 回归、离线模拟均过
+
+> 至此 M0→M5 全部达成。"演示→可信作品"补强里，流式输出已落地。
+
 ## 暂不实现（v4 里、原型阶段留白）
 Kafka/NATS 消息总线、Self-Healing、Plugin Runtime(WASM/容器)、ClickHouse、K8s/Canary/Chaos、Graph IR/DSL 自研引擎、Arbiter 仲裁、向量记忆。
 均写为占位接口或扩展点，不在原型实现。

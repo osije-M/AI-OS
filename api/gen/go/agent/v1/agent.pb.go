@@ -24,6 +24,83 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// 流式事件。type 决定哪些字段有效。
+type StreamEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"` // node | token | done | error
+	TraceId       string                 `protobuf:"bytes,2,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
+	Node          string                 `protobuf:"bytes,3,opt,name=node,proto3" json:"node,omitempty"`       // 当前节点（supervisor/coding/...）
+	Content       string                 `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"` // token: 文本增量；node: 简述；error: 错误信息
+	Final         *RunGraphReply         `protobuf:"bytes,5,opt,name=final,proto3" json:"final,omitempty"`     // 仅 type=done 填充（完整 output/route/status/trace）
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamEvent) Reset() {
+	*x = StreamEvent{}
+	mi := &file_agent_v1_agent_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamEvent) ProtoMessage() {}
+
+func (x *StreamEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamEvent.ProtoReflect.Descriptor instead.
+func (*StreamEvent) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *StreamEvent) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *StreamEvent) GetTraceId() string {
+	if x != nil {
+		return x.TraceId
+	}
+	return ""
+}
+
+func (x *StreamEvent) GetNode() string {
+	if x != nil {
+		return x.Node
+	}
+	return ""
+}
+
+func (x *StreamEvent) GetContent() string {
+	if x != nil {
+		return x.Content
+	}
+	return ""
+}
+
+func (x *StreamEvent) GetFinal() *RunGraphReply {
+	if x != nil {
+		return x.Final
+	}
+	return nil
+}
+
 type RunGraphRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TraceId       string                 `protobuf:"bytes,1,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`                                                          // 贯穿全链路的追踪 id
@@ -36,7 +113,7 @@ type RunGraphRequest struct {
 
 func (x *RunGraphRequest) Reset() {
 	*x = RunGraphRequest{}
-	mi := &file_agent_v1_agent_proto_msgTypes[0]
+	mi := &file_agent_v1_agent_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -48,7 +125,7 @@ func (x *RunGraphRequest) String() string {
 func (*RunGraphRequest) ProtoMessage() {}
 
 func (x *RunGraphRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[0]
+	mi := &file_agent_v1_agent_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -61,7 +138,7 @@ func (x *RunGraphRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunGraphRequest.ProtoReflect.Descriptor instead.
 func (*RunGraphRequest) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{0}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *RunGraphRequest) GetTraceId() string {
@@ -105,7 +182,7 @@ type RunGraphReply struct {
 
 func (x *RunGraphReply) Reset() {
 	*x = RunGraphReply{}
-	mi := &file_agent_v1_agent_proto_msgTypes[1]
+	mi := &file_agent_v1_agent_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -117,7 +194,7 @@ func (x *RunGraphReply) String() string {
 func (*RunGraphReply) ProtoMessage() {}
 
 func (x *RunGraphReply) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[1]
+	mi := &file_agent_v1_agent_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -130,7 +207,7 @@ func (x *RunGraphReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunGraphReply.ProtoReflect.Descriptor instead.
 func (*RunGraphReply) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{1}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *RunGraphReply) GetTraceId() string {
@@ -181,7 +258,7 @@ type NodeTrace struct {
 
 func (x *NodeTrace) Reset() {
 	*x = NodeTrace{}
-	mi := &file_agent_v1_agent_proto_msgTypes[2]
+	mi := &file_agent_v1_agent_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -193,7 +270,7 @@ func (x *NodeTrace) String() string {
 func (*NodeTrace) ProtoMessage() {}
 
 func (x *NodeTrace) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[2]
+	mi := &file_agent_v1_agent_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -206,7 +283,7 @@ func (x *NodeTrace) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeTrace.ProtoReflect.Descriptor instead.
 func (*NodeTrace) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{2}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *NodeTrace) GetNode() string {
@@ -241,7 +318,13 @@ var File_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x14agent/v1/agent.proto\x12\raios.agent.v1\"\xd5\x01\n" +
+	"\x14agent/v1/agent.proto\x12\raios.agent.v1\"\x9e\x01\n" +
+	"\vStreamEvent\x12\x12\n" +
+	"\x04type\x18\x01 \x01(\tR\x04type\x12\x19\n" +
+	"\btrace_id\x18\x02 \x01(\tR\atraceId\x12\x12\n" +
+	"\x04node\x18\x03 \x01(\tR\x04node\x12\x18\n" +
+	"\acontent\x18\x04 \x01(\tR\acontent\x122\n" +
+	"\x05final\x18\x05 \x01(\v2\x1c.aios.agent.v1.RunGraphReplyR\x05final\"\xd5\x01\n" +
 	"\x0fRunGraphRequest\x12\x19\n" +
 	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12\x12\n" +
 	"\x04task\x18\x02 \x01(\tR\x04task\x12\x14\n" +
@@ -261,9 +344,10 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x18\n" +
 	"\asummary\x18\x03 \x01(\tR\asummary\x12\x1d\n" +
 	"\n" +
-	"latency_ms\x18\x04 \x01(\x03R\tlatencyMs2X\n" +
+	"latency_ms\x18\x04 \x01(\x03R\tlatencyMs2\xa8\x01\n" +
 	"\fAgentRuntime\x12H\n" +
-	"\bRunGraph\x12\x1e.aios.agent.v1.RunGraphRequest\x1a\x1c.aios.agent.v1.RunGraphReplyB4Z2github.com/osije/ai-os/api/gen/go/agent/v1;agentv1b\x06proto3"
+	"\bRunGraph\x12\x1e.aios.agent.v1.RunGraphRequest\x1a\x1c.aios.agent.v1.RunGraphReply\x12N\n" +
+	"\x0eRunGraphStream\x12\x1e.aios.agent.v1.RunGraphRequest\x1a\x1a.aios.agent.v1.StreamEvent0\x01B4Z2github.com/osije/ai-os/api/gen/go/agent/v1;agentv1b\x06proto3"
 
 var (
 	file_agent_v1_agent_proto_rawDescOnce sync.Once
@@ -277,23 +361,27 @@ func file_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_agent_v1_agent_proto_rawDescData
 }
 
-var file_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_agent_v1_agent_proto_goTypes = []any{
-	(*RunGraphRequest)(nil), // 0: aios.agent.v1.RunGraphRequest
-	(*RunGraphReply)(nil),   // 1: aios.agent.v1.RunGraphReply
-	(*NodeTrace)(nil),       // 2: aios.agent.v1.NodeTrace
-	nil,                     // 3: aios.agent.v1.RunGraphRequest.ParamsEntry
+	(*StreamEvent)(nil),     // 0: aios.agent.v1.StreamEvent
+	(*RunGraphRequest)(nil), // 1: aios.agent.v1.RunGraphRequest
+	(*RunGraphReply)(nil),   // 2: aios.agent.v1.RunGraphReply
+	(*NodeTrace)(nil),       // 3: aios.agent.v1.NodeTrace
+	nil,                     // 4: aios.agent.v1.RunGraphRequest.ParamsEntry
 }
 var file_agent_v1_agent_proto_depIdxs = []int32{
-	3, // 0: aios.agent.v1.RunGraphRequest.params:type_name -> aios.agent.v1.RunGraphRequest.ParamsEntry
-	2, // 1: aios.agent.v1.RunGraphReply.trace:type_name -> aios.agent.v1.NodeTrace
-	0, // 2: aios.agent.v1.AgentRuntime.RunGraph:input_type -> aios.agent.v1.RunGraphRequest
-	1, // 3: aios.agent.v1.AgentRuntime.RunGraph:output_type -> aios.agent.v1.RunGraphReply
-	3, // [3:4] is the sub-list for method output_type
-	2, // [2:3] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	2, // 0: aios.agent.v1.StreamEvent.final:type_name -> aios.agent.v1.RunGraphReply
+	4, // 1: aios.agent.v1.RunGraphRequest.params:type_name -> aios.agent.v1.RunGraphRequest.ParamsEntry
+	3, // 2: aios.agent.v1.RunGraphReply.trace:type_name -> aios.agent.v1.NodeTrace
+	1, // 3: aios.agent.v1.AgentRuntime.RunGraph:input_type -> aios.agent.v1.RunGraphRequest
+	1, // 4: aios.agent.v1.AgentRuntime.RunGraphStream:input_type -> aios.agent.v1.RunGraphRequest
+	2, // 5: aios.agent.v1.AgentRuntime.RunGraph:output_type -> aios.agent.v1.RunGraphReply
+	0, // 6: aios.agent.v1.AgentRuntime.RunGraphStream:output_type -> aios.agent.v1.StreamEvent
+	5, // [5:7] is the sub-list for method output_type
+	3, // [3:5] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_agent_v1_agent_proto_init() }
@@ -307,7 +395,7 @@ func file_agent_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_v1_agent_proto_rawDesc), len(file_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

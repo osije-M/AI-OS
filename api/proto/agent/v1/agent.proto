@@ -7,8 +7,20 @@ package aios.agent.v1;
 option go_package = "github.com/osije/ai-os/api/gen/go/agent/v1;agentv1";
 
 service AgentRuntime {
-  // 运行一个 Agent 图直到结束（原型阶段先做 unary，后续可加流式）。
+  // 运行一个 Agent 图直到结束（unary，一次性返回）。
   rpc RunGraph(RunGraphRequest) returns (RunGraphReply);
+  // 流式运行：逐 token 推送大模型输出（聊天式）。流式路径只做 路由+流式作答，
+  // 不跑 reflect 循环；unary 路径保留全部能力。
+  rpc RunGraphStream(RunGraphRequest) returns (stream StreamEvent);
+}
+
+// 流式事件。type 决定哪些字段有效。
+message StreamEvent {
+  string type = 1;          // node | token | done | error
+  string trace_id = 2;
+  string node = 3;          // 当前节点（supervisor/coding/...）
+  string content = 4;       // token: 文本增量；node: 简述；error: 错误信息
+  RunGraphReply final = 5;  // 仅 type=done 填充（完整 output/route/status/trace）
 }
 
 message RunGraphRequest {
