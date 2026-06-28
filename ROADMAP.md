@@ -27,8 +27,10 @@
 
 ## M3 — 平台能力（对应 v4 第 11/12 节，留接口占位）
 - [x] Observability ✅：独立 trace-store 服务(:9400, 内存+JSONL落盘可回放) + orchestrator 最佳努力 capture + gateway 查询 API(`/v1/trace/{id}`、`/v1/traces`) + `/viewer` HTML 链路查看器 + `tracectl` CLI(lipgloss)。凭 trace_id 可还原"请求怎么走的"，同一份 JSON 喂 HTML 与 CLI 两渲染器。已端到端验证(含重启持久化、宕机不影响主链路)。
-- [ ] Policy：请求前置 Allow/Deny（执行防火墙雏形）
-- [ ] Gateway HTTP：引入 google.api.http 注解 + 第三方 proto vendoring（offline-safe）
+- [x] Policy ✅：orchestrator 执行前置 Allow/Deny/Transform(configs/policy.yaml, version 化)；deny 不调 LLM、status=DENIED；policy 决策记入 trace(被拦请求 viewer 可见)；安全降级。
+- [x] Gateway HTTP ✅：google.api.http 注解生成 `POST /v1/run`(protoc-gen-go-http)；第三方 proto 从 kratos 模块缓存 vendor 到 third_party/(offline-safe)；buf v2 用 `buf generate api/proto` 限定不污染 google/api。trace/traces/viewer 仍手写路由作对照。注：/v1/run 响应改 camelCase(traceId)。
+
+> **M3 三项全部完成。** 至此 M0→M3 全部里程碑达成。
 
 ## 暂不实现（v4 里、原型阶段留白）
 Kafka/NATS 消息总线、Self-Healing、Plugin Runtime(WASM/容器)、ClickHouse、K8s/Canary/Chaos、Graph IR/DSL 自研引擎、Arbiter 仲裁、向量记忆。

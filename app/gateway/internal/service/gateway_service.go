@@ -71,48 +71,6 @@ func (g *GatewayServiceImpl) Run(ctx context.Context, req *gatewayv1.RunRequest)
 	}, nil
 }
 
-// runRequest is the HTTP body for POST /v1/run.
-type runRequest struct {
-	Task  string `json:"task"`
-	Agent string `json:"agent"`
-}
-
-// runReply is the HTTP response for POST /v1/run.
-type runReply struct {
-	TraceID string `json:"trace_id"`
-	Output  string `json:"output"`
-	Status  string `json:"status"`
-}
-
-// HandleRun handles POST /v1/run via Kratos HTTP context.
-func (g *GatewayServiceImpl) HandleRun(ctx khttp.Context) error {
-	var req runRequest
-	if err := ctx.Bind(&req); err != nil {
-		return err
-	}
-
-	conn, client, err := g.dialOrchestrator()
-	if err != nil {
-		log.Printf("[gateway] dial orchestrator error: %v", err)
-		return ctx.JSON(502, &runReply{Status: "FAILED", Output: err.Error()})
-	}
-	defer conn.Close()
-
-	reply, err := client.RunTask(ctx.Request().Context(), &orchestratorv1.RunTaskRequest{
-		Task:  req.Task,
-		Agent: req.Agent,
-	})
-	if err != nil {
-		log.Printf("[gateway] RunTask error: %v", err)
-		return ctx.JSON(502, &runReply{Status: "FAILED", Output: err.Error()})
-	}
-	return ctx.JSON(200, &runReply{
-		TraceID: reply.TraceId,
-		Output:  reply.Output,
-		Status:  reply.Status,
-	})
-}
-
 // HandleGetTrace handles GET /v1/trace/{id}
 func (g *GatewayServiceImpl) HandleGetTrace(ctx khttp.Context) error {
 	id := ctx.Vars().Get("id")

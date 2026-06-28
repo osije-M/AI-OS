@@ -6,8 +6,8 @@ cd "$(dirname "$0")/.."
 export PATH="$(go env GOPATH)/bin:$PATH"
 echo "[gen] buf lint"
 buf lint
-echo "[gen] buf generate (Go)"
-buf generate
+echo "[gen] buf generate (Go) — 模块 api/proto 作输入, third_party 仅供 import 解析(不生成)"
+buf generate api/proto
 echo "[gen] go mod tidy"
 go mod tidy
 echo "[gen] done"

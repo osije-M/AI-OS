@@ -6,7 +6,8 @@
 
 // Gateway = 系统入口（Go / Kratos 实现）。对外暴露 HTTP/gRPC，做鉴权/限流/
 // 路由，转发到 Orchestrator。对应 v4 第 2 节部署架构的 API Gateway。
-// 原型阶段先 gRPC-only；HTTP 注解(google.api.http)+第三方 proto vendoring 留到后续。
+// M3: HTTP 入口改为由 google.api.http 注解生成（契约先行），第三方 proto 已
+// vendor 到 third_party/google/api。
 
 package gatewayv1
 

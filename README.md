@@ -113,7 +113,9 @@ curl -X POST http://127.0.0.1:8000/v1/run \
 - [x] M1：端到端跑通一次 task（含跨服务 gRPC + trace_id 透传 + 工具调用）
 - [x] M2：动态路由（research/coding/review）+ Failure/Recovery（L1 retry + L3 model-switch）+ reflect 有界循环；真模型链路已验证
 - [x] M3 Observability：trace-store 服务(:9400) + capture + 查询 API + `/viewer` 网页 + `tracectl` CLI；凭 trace_id 还原执行链路，已端到端验证
-- [ ] M3 续：Policy 防火墙、Gateway HTTP 注解（见 ROADMAP）
+- [x] M3 Policy：orchestrator 执行前置 Allow/Deny/Transform 防火墙，deny 不调 LLM，决策记入 trace
+- [x] M3 Gateway HTTP：`POST /v1/run` 改 google.api.http 注解生成（第三方 proto 离线 vendor）
+- 🎉 M0→M3 里程碑全部达成（见 ROADMAP）
 
 ### 看执行链路（M3）
 全栈起 5 个服务后，浏览器开 `http://127.0.0.1:8000/viewer`，输入某次请求返回的 `trace_id` 即可看到时间线；或终端 `tracectl <trace_id>`。两者吃同一份 `GET /v1/trace/{id}` JSON。

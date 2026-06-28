@@ -1,6 +1,9 @@
 version: v2
 modules:
   - path: api/proto
+  # 第三方 proto（google/api/*，从 kratos 模块缓存 vendor）。仅供 import 解析，
+  # 不生成其 Go 代码（生成时用 buf generate --path api/proto 限定）。
+  - path: third_party
 lint:
   use:
     - STANDARD
@@ -11,6 +14,10 @@ lint:
     - PACKAGE_DIRECTORY_MATCH
     - RPC_RESPONSE_STANDARD_NAME
     - SERVICE_SUFFIX
+  ignore:
+    - third_party
 breaking:
   use:
     - FILE
+  ignore:
+    - third_party

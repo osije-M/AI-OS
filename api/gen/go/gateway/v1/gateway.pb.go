@@ -6,11 +6,13 @@
 
 // Gateway = 系统入口（Go / Kratos 实现）。对外暴露 HTTP/gRPC，做鉴权/限流/
 // 路由，转发到 Orchestrator。对应 v4 第 2 节部署架构的 API Gateway。
-// 原型阶段先 gRPC-only；HTTP 注解(google.api.http)+第三方 proto vendoring 留到后续。
+// M3: HTTP 入口改为由 google.api.http 注解生成（契约先行），第三方 proto 已
+// vendor 到 third_party/google/api。
 
 package gatewayv1
 
 import (
+	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -141,7 +143,7 @@ var File_gateway_v1_gateway_proto protoreflect.FileDescriptor
 
 const file_gateway_v1_gateway_proto_rawDesc = "" +
 	"\n" +
-	"\x18gateway/v1/gateway.proto\x12\x0faios.gateway.v1\"6\n" +
+	"\x18gateway/v1/gateway.proto\x12\x0faios.gateway.v1\x1a\x1cgoogle/api/annotations.proto\"6\n" +
 	"\n" +
 	"RunRequest\x12\x12\n" +
 	"\x04task\x18\x01 \x01(\tR\x04task\x12\x14\n" +
@@ -149,9 +151,9 @@ const file_gateway_v1_gateway_proto_rawDesc = "" +
 	"\bRunReply\x12\x19\n" +
 	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12\x16\n" +
 	"\x06output\x18\x02 \x01(\tR\x06output\x12\x16\n" +
-	"\x06status\x18\x03 \x01(\tR\x06status2H\n" +
-	"\aGateway\x12=\n" +
-	"\x03Run\x12\x1b.aios.gateway.v1.RunRequest\x1a\x19.aios.gateway.v1.RunReplyB8Z6github.com/osije/ai-os/api/gen/go/gateway/v1;gatewayv1b\x06proto3"
+	"\x06status\x18\x03 \x01(\tR\x06status2\\\n" +
+	"\aGateway\x12Q\n" +
+	"\x03Run\x12\x1b.aios.gateway.v1.RunRequest\x1a\x19.aios.gateway.v1.RunReply\"\x12\x82\xd3\xe4\x93\x02\f:\x01*\"\a/v1/runB8Z6github.com/osije/ai-os/api/gen/go/gateway/v1;gatewayv1b\x06proto3"
 
 var (
 	file_gateway_v1_gateway_proto_rawDescOnce sync.Once
