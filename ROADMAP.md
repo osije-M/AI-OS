@@ -30,7 +30,15 @@
 - [x] Policy ✅：orchestrator 执行前置 Allow/Deny/Transform(configs/policy.yaml, version 化)；deny 不调 LLM、status=DENIED；policy 决策记入 trace(被拦请求 viewer 可见)；安全降级。
 - [x] Gateway HTTP ✅：google.api.http 注解生成 `POST /v1/run`(protoc-gen-go-http)；第三方 proto 从 kratos 模块缓存 vendor 到 third_party/(offline-safe)；buf v2 用 `buf generate api/proto` 限定不污染 google/api。trace/traces/viewer 仍手写路由作对照。注：/v1/run 响应改 camelCase(traceId)。
 
-> **M3 三项全部完成。** 至此 M0→M3 全部里程碑达成。
+> **M3 三项全部完成。**
+
+## M4 — 外部能力中间件 + 接入真实 OSS ✅
+- [x] 通用「外部能力」契约：`GET /spec` + `POST /invoke`（刻意对齐 tool.proto，可无缝并入 Tool Mesh）
+- [x] ToolService 外部连接器：读 `EXTERNAL_TOOLS` 配置，ListTools 合并外部 /spec、Invoke 代理外部 /invoke（按需刷新映射）；**配置即插拔**
+- [x] 接入 **AI 合约审计器**：在审计器仓库新增 `cmd/auditserver`（不改其内部代码），暴露标准契约；Python 加 audit 路由 + audit worker 经 Tool Mesh 调它
+- [x] 端到端验证：审计任务路由到 audit → 经 Mesh 调外部审计器 → 返回真实混合管线结论（重入 [VULNERABLE] 95%）→ 全程入 trace；插拔与降级均验过
+
+> **意义**：证明"任意 OSS 套 /spec+/invoke 薄壳 + 配置加 URL 即可接入，AI-OS 零代码改动"。M0→M4 全部达成。
 
 ## 暂不实现（v4 里、原型阶段留白）
 Kafka/NATS 消息总线、Self-Healing、Plugin Runtime(WASM/容器)、ClickHouse、K8s/Canary/Chaos、Graph IR/DSL 自研引擎、Arbiter 仲裁、向量记忆。

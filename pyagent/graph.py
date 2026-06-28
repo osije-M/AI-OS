@@ -2,10 +2,11 @@
 LangGraph supervisor -> worker graph for AgentRuntime.
 
 M2 upgrade: dynamic routing (slice1) + failure recovery (slice2) + reflect loop (slice3).
+M4 upgrade: audit worker via Tool Mesh (ToolService.Invoke("audit", ...)).
 
 State:
   task        - the user task string
-  route       - routing decision: research / coding / review
+  route       - routing decision: research / coding / review / audit
   output      - final answer string
   trace       - list of NodeTrace dicts {node, type, summary, latency_ms}
   llm_ok      - True if LLM succeeded at least once
@@ -16,6 +17,7 @@ Nodes:
   research_node - worker: research / explain / summarize
   coding_node   - worker: write / modify code
   review_node   - worker: review / audit / bug-hunt
+  audit_node    - worker: Solidity smart-contract security audit via Tool Mesh
   reflect_node  - control node: judge output quality, PASS or RETRY (bounded loop)
 
 LLM helper (_call_llm):
@@ -25,6 +27,9 @@ LLM helper (_call_llm):
 
 Tool helper (_call_tool_reverse):
   Optional gRPC call to ToolService; silent-fail if unreachable.
+
+Tool helper (_call_tool_audit):
+  gRPC call to ToolService.Invoke("audit", {source, rule_only}); graceful-degrade on failure.
 """
 
 import os
@@ -65,7 +70,7 @@ MAX_LOOPS: int = _env_int("MAX_LOOPS", 1)
 
 class AgentState(TypedDict):
     task: str
-    route: str                # routing decision: research / coding / review
+    route: str                # routing decision: research / coding / review / audit
     output: str
     trace: list[dict[str, Any]]
     llm_ok: bool              # True if at least one LLM call succeeded
@@ -128,6 +133,64 @@ def _call_tool_reverse(task: str, trace_id: str) -> tuple[str | None, dict | Non
     except Exception as exc:
         logger.debug("[tool] ToolService not reachable (%s), skipping", exc)
     return None, None
+
+
+# ---------------------------------------------------------------------------
+# Audit tool helper (optional, graceful-degrade)
+# ---------------------------------------------------------------------------
+
+def _call_tool_audit(source: str, rule_only: bool = False) -> tuple[dict | None, dict | None]:
+    """
+    Call ToolService.Invoke("audit", {source, rule_only}) via gRPC.
+    Returns (result_dict, node_trace_dict) or (None, trace_with_error) on failure.
+    The caller should NEVER raise; always check result_dict for None to detect failure.
+    """
+    tool_addr = os.getenv("TOOL_SERVICE_ADDR", "127.0.0.1:9200")
+    t0 = _now_ms()
+    try:
+        gen_dir = os.path.join(os.path.dirname(__file__), "gen")
+        if gen_dir not in sys.path:
+            sys.path.insert(0, gen_dir)
+        from tool.v1 import tool_pb2, tool_pb2_grpc  # noqa: PLC0415
+
+        channel = grpc.insecure_channel(tool_addr)
+        stub = tool_pb2_grpc.ToolServiceStub(channel)
+        req = tool_pb2.InvokeRequest(
+            name="audit",
+            input_json=json.dumps({"source": source, "rule_only": rule_only}),
+            trace_id="",
+        )
+        resp = stub.Invoke(req, timeout=30)
+        latency = _now_ms() - t0
+        channel.close()
+
+        if resp.ok:
+            result = json.loads(resp.output_json) if resp.output_json else {}
+            trace_entry = _make_trace(
+                "tool:audit", "tool",
+                f"audit ok: is_reentrancy={result.get('is_reentrancy')}, "
+                f"confidence={result.get('confidence', 0):.2f}",
+                latency,
+            )
+            return result, trace_entry
+        else:
+            err_msg = resp.error or "unknown error"
+            trace_entry = _make_trace(
+                "tool:audit", "tool",
+                f"audit tool returned ok=false: {err_msg}",
+                latency,
+            )
+            return None, trace_entry
+
+    except Exception as exc:
+        latency = _now_ms() - t0
+        logger.debug("[tool:audit] ToolService not reachable (%s)", exc)
+        trace_entry = _make_trace(
+            "tool:audit", "tool",
+            f"audit tool unreachable: {type(exc).__name__}: {exc}",
+            latency,
+        )
+        return None, trace_entry
 
 
 # ---------------------------------------------------------------------------
@@ -285,24 +348,57 @@ def _call_llm(task: str, system_prompt: str = "", timeout_override: float | None
 # Routing helpers
 # ---------------------------------------------------------------------------
 
-_ROUTE_LABELS = {"research", "coding", "review"}
+_ROUTE_LABELS = {"research", "coding", "review", "audit"}
 
 _SYSTEM_PROMPT_ROUTER = (
     "You are a task router. Classify the user task into exactly one label: "
-    "research, coding, or review. "
+    "research, coding, review, or audit. "
+    "Use 'audit' for Solidity smart-contract security auditing tasks. "
     "Reply with ONLY the label word (lowercase). No punctuation, no explanation."
 )
+
+# Audit keywords: Solidity-specific signals that unambiguously indicate smart-contract audit.
+# These are high-precision; generic security terms (security, audit, vulnerab) are excluded
+# to avoid colliding with general code-review tasks.
+_AUDIT_KEYWORDS_STRONG = (
+    "pragma solidity", "pragma", "contract ", "合约", "重入", "reentrancy",
+)
+# Secondary audit signals: only route to audit when combined with at least one strong signal,
+# OR used standalone in a Chinese/audit-specific phrasing.
+_AUDIT_KEYWORDS_SECONDARY = (
+    "审计", "solidity",
+)
+
+
+def _is_audit_task(task_lower: str) -> bool:
+    """Return True if the task should be routed to the audit worker.
+
+    Rule: at least one strong Solidity-specific signal present,
+    OR one of the secondary audit-specific terms that imply contract context.
+    Generic security/vulnerability words alone do NOT trigger audit.
+    """
+    t = task_lower
+    if any(k in t for k in _AUDIT_KEYWORDS_STRONG):
+        return True
+    if any(k in t for k in _AUDIT_KEYWORDS_SECONDARY):
+        return True
+    return False
+
 
 def _keyword_route(task: str) -> str:
     """Deterministic keyword-based routing (offline fallback).
 
-    Priority: review > coding > research
-    review is checked first because review tasks often also contain 'code'.
+    Priority: audit > review > coding > research
+    audit is checked first (highest priority) because Solidity/contract tasks are specific.
+    review is checked before coding because review tasks often also contain 'code'.
     """
     t = task.lower()
-    # Review signals take priority (review tasks often say "review this code")
+    # Audit signals: Solidity/contract-specific keywords (highest priority)
+    if _is_audit_task(t):
+        return "audit"
+    # Review signals take priority over coding (review tasks often say "review this code")
     if any(k in t for k in ("review", "bug", "audit", "inspect", "smell",
-                             "審查", "审查", "审视", "漏洞")):
+                             "審查", "审查", "审视", "漏洞", "vulnerab", "security", "安全")):
         return "review"
     # Coding signals
     if any(k in t for k in ("code", "codes", "coding", "implement", "write", "function",
@@ -315,9 +411,16 @@ def _keyword_route(task: str) -> str:
 def _llm_route(task: str) -> str:
     """Use LLM for intent classification; fall back to keyword on any failure.
 
+    Audit keyword pre-check runs BEFORE the LLM call: if the task contains Solidity/
+    contract signals, route immediately to audit without spending LLM tokens on routing.
     Uses a short timeout (LLM_ROUTE_TIMEOUT_S, default 8s) so routing failures
     degrade quickly to keyword fallback without blocking the main task LLM budget.
     """
+    # Fast path: audit-specific keywords detected offline before calling LLM
+    t = task.lower()
+    if _is_audit_task(t):
+        return "audit"
+
     route_timeout = _env_float("LLM_ROUTE_TIMEOUT_S", 8.0)
     try:
         res = _call_llm(task, system_prompt=_SYSTEM_PROMPT_ROUTER, timeout_override=route_timeout)
@@ -422,6 +525,89 @@ def review_node(state: AgentState) -> AgentState:
     return _run_worker(state, "review")
 
 
+def audit_node(state: AgentState) -> AgentState:
+    """
+    Audit worker: extract Solidity source from task, call ToolService.Invoke("audit"),
+    format result into output. Gracefully degrades when ToolService is unreachable.
+    """
+    task = state["task"]
+    trace = list(state["trace"])
+    t0 = _now_ms()
+
+    # --- Extract Solidity source from task ---
+    # Priority 1: code fence (```...```)
+    source = None
+    if "```" in task:
+        import re
+        # match ```solidity ... ``` or ``` ... ```
+        m = re.search(r"```(?:solidity)?\s*\n?(.*?)```", task, re.DOTALL | re.IGNORECASE)
+        if m:
+            source = m.group(1).strip()
+    # Priority 2: inline pragma/contract without fence
+    if source is None:
+        tl = task.lower()
+        if "pragma" in tl or "contract " in tl:
+            source = task.strip()
+    # Fallback: send whole task as source (let auditor deal with it)
+    if source is None:
+        source = task.strip()
+
+    # --- Call ToolService.Invoke("audit") ---
+    result_dict, tool_trace = _call_tool_audit(source, rule_only=False)
+    if tool_trace:
+        trace.append(tool_trace)
+
+    latency = _now_ms() - t0
+
+    if result_dict is not None:
+        # Format the audit result into human-readable output
+        is_reentrancy = result_dict.get("is_reentrancy", False)
+        confidence = result_dict.get("confidence", 0.0)
+        locations = result_dict.get("locations", [])
+        reason = result_dict.get("reason", "")
+        fix = result_dict.get("fix", [])
+
+        verdict = "[VULNERABLE]" if is_reentrancy else "[SAFE]"
+        lines = [
+            f"[audit] Reentrancy audit result: {verdict}",
+            f"  Confidence : {confidence:.0%}",
+        ]
+        if locations:
+            lines.append(f"  Locations  : {', '.join(str(loc) for loc in locations)}")
+        if reason:
+            lines.append(f"  Reason     : {reason}")
+        if fix:
+            lines.append("  Fix hints  :")
+            for f_item in fix:
+                lines.append(f"    - {f_item}")
+        output = "\n".join(lines)
+        llm_ok = True
+
+        summary = (
+            f"audit via tool:audit ok, is_reentrancy={is_reentrancy}, "
+            f"confidence={confidence:.2f}, {len(locations)} location(s)"
+        )
+    else:
+        # Graceful degradation: extract error from last tool:audit trace entry
+        err_detail = ""
+        for entry in reversed(trace):
+            if entry.get("node") == "tool:audit":
+                err_detail = entry.get("summary", "")
+                break
+        output = f"[audit] Service unavailable or returned error. {err_detail}"
+        llm_ok = False
+        summary = f"audit degraded: tool:audit not ok"
+
+    trace.append(_make_trace("audit", "tool", summary, latency))
+
+    return {
+        **state,
+        "output": output,
+        "trace": trace,
+        "llm_ok": llm_ok,
+    }
+
+
 def reflect_node(state: AgentState) -> AgentState:
     """Judge whether the output sufficiently answers the task."""
     t0 = _now_ms()
@@ -507,6 +693,7 @@ def build_graph() -> Any:
     builder.add_node("research", research_node)
     builder.add_node("coding", coding_node)
     builder.add_node("review", review_node)
+    builder.add_node("audit", audit_node)
     builder.add_node("reflect", reflect_node)
 
     # Entry
@@ -516,13 +703,14 @@ def build_graph() -> Any:
     builder.add_conditional_edges(
         "supervisor",
         route_fn,
-        {"research": "research", "coding": "coding", "review": "review"},
+        {"research": "research", "coding": "coding", "review": "review", "audit": "audit"},
     )
 
     # Workers -> reflect
     builder.add_edge("research", "reflect")
     builder.add_edge("coding", "reflect")
     builder.add_edge("review", "reflect")
+    builder.add_edge("audit", "reflect")
 
     # Reflect -> END or back to worker
     builder.add_conditional_edges(
@@ -533,6 +721,7 @@ def build_graph() -> Any:
             "research": "research",
             "coding": "coding",
             "review": "review",
+            "audit": "audit",
         },
     )
 

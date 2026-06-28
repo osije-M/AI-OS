@@ -17,7 +17,7 @@ import (
 
 func initApp() (*kratos.App, error) {
 	config := conf.Load()
-	toolServiceImpl := service.NewToolServiceImpl()
+	toolServiceImpl := service.NewToolServiceImpl(config)
 	grpcServer := server.NewGRPCServer(config, toolServiceImpl)
 	app := newApp(grpcServer)
 	return app, nil

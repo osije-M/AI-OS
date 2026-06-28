@@ -1,13 +1,14 @@
 """
-Smoke test for M2 Python smart layer (graph.py).
+Smoke test for M2/M4 Python smart layer (graph.py).
 
-Covers four verification cases:
-  1. Offline routing   - three tasks route to coding/review/research deterministically
+Covers five verification cases:
+  1. Offline routing   - tasks route to coding/review/research/audit deterministically
   2. Offline loop      - reflect always PASS offline, no extra cycles, status=OK
   3. Fault injection   - L1 retry + L3 switch visible in trace, final status=FAILED
   4. Server startup    - server starts and listens on :9100 (offline mode)
+  5. Audit degradation - audit task with no ToolService: no crash, degraded output, status=FAILED
 
-Cases 1-3 call run_graph() directly (no server needed).
+Cases 1-3,5 call run_graph() directly (no server needed).
 Case 4 starts server in a thread and calls RunGraph via gRPC.
 
 Run with:
@@ -83,7 +84,11 @@ def test_offline_routing():
         cases = [
             ("write a quicksort function in Python", "coding"),
             ("review this code for bugs and security issues", "review"),
-            ("what is a reentrancy vulnerability in Solidity", "research"),
+            ("what is the meaning of life", "research"),
+            # audit route: Solidity/contract keywords
+            ("audit this contract pragma solidity ^0.8.0; contract Vuln { }", "audit"),
+            # audit route: Chinese keywords
+            ("审计这个合约的重入漏洞", "audit"),
         ]
 
         for task, expected_route in cases:
@@ -111,8 +116,18 @@ def test_offline_routing():
                 _find_trace_summary(trace, f"routed -> {expected_route}"),
                 f"trace contains '[control] routed -> {expected_route}'",
             )
-            _assert(status == "OK", f"status=OK (offline path always ok)")
-            _assert("[offline]" in output, "output contains [offline] marker")
+            if expected_route == "audit":
+                # Audit worker goes through ToolService (not LLM); no ToolService running offline
+                # so it degrades: status=FAILED, output starts with [audit]
+                _assert(status == "FAILED", f"audit task status=FAILED (no ToolService offline)")
+                _assert("[audit]" in output, f"audit output has [audit] marker: {output[:60]!r}")
+                _assert(
+                    any(t.get("node") == "tool:audit" for t in trace),
+                    "trace has tool:audit step",
+                )
+            else:
+                _assert(status == "OK", f"status=OK (offline LLM path always ok)")
+                _assert("[offline]" in output, "output contains [offline] marker")
     finally:
         if orig is not None:
             os.environ["DEEPSEEK_API_KEY"] = orig
@@ -281,18 +296,78 @@ def test_server_startup():
 
 
 # =========================================================
+# Case 5: Audit degradation (no ToolService running)
+# =========================================================
+
+def test_audit_degradation():
+    print("\n--- Case 5: Audit degradation (ToolService not running) ---")
+
+    orig = os.environ.pop("DEEPSEEK_API_KEY", None)
+    # Point at an address where nothing listens so gRPC fails fast
+    os.environ["TOOL_SERVICE_ADDR"] = "127.0.0.1:19299"
+    try:
+        import importlib
+        import graph as gm
+        importlib.reload(gm)
+
+        task = (
+            "audit this contract pragma solidity ^0.8.0;\n"
+            "contract Vuln {\n"
+            "  mapping(address=>uint) bal;\n"
+            "  function withdraw() public {\n"
+            "    uint amt = bal[msg.sender];\n"
+            "    (bool ok,) = msg.sender.call{value: amt}(\"\");\n"
+            "    require(ok);\n"
+            "    bal[msg.sender] = 0;\n"
+            "  }\n"
+            "}"
+        )
+
+        print("  (running audit task with no ToolService - expect graceful degrade...)")
+        result = gm.run_graph(task)
+        trace = result["trace"]
+        output = result["output"]
+        status = result["status"]
+
+        print(f"\n  status={status}")
+        print(f"  output={output[:200]!r}")
+        _print_trace(trace)
+
+        # Must not have raised; output should be the degradation message
+        _assert(status == "FAILED", f"status=FAILED (audit tool unreachable, got {status!r})")
+        _assert("[audit]" in output, f"output starts with [audit] degradation: {output[:80]!r}")
+        _assert(
+            any(t.get("node") == "tool:audit" for t in trace),
+            "trace has tool:audit step",
+        )
+        # Supervisor should have routed to audit
+        _assert(
+            any("routed -> audit" in t.get("summary", "") for t in trace),
+            "supervisor routed to audit",
+        )
+        # No exception should have escaped (we reached here)
+        _ok("no exception raised (graph is stable)")
+
+    finally:
+        os.environ.pop("TOOL_SERVICE_ADDR", None)
+        if orig is not None:
+            os.environ["DEEPSEEK_API_KEY"] = orig
+
+
+# =========================================================
 # Main
 # =========================================================
 
 if __name__ == "__main__":
     print("=" * 65)
-    print("M2 Smoke Tests")
+    print("M2/M4 Smoke Tests")
     print("=" * 65)
 
     test_offline_routing()
     test_offline_loop()
     test_fault_injection()
     test_server_startup()
+    test_audit_degradation()
 
     print("\n" + "=" * 65)
     print(f"Results: {PASS_COUNT} passed, {FAIL_COUNT} failed")
