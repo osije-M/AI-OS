@@ -1,0 +1,18 @@
+# Gateway 鉴权与限流配置（由 authz 包加载）。
+# 设计：默认「鉴权关闭」——api_keys 为空时任何人可访问，保证 `docker compose up` 开箱即演示。
+# 一旦配置了 api_keys，则 /v1/* 接口必须携带凭据：
+#   Authorization: Bearer <key>   或   X-API-Key: <key>
+# 静态页 /viewer、/chat 始终放行（但它们内部调用的 /v1/* 在鉴权开启后需带 key）。
+version: v1
+
+# 授权客户端列表。留空 = 鉴权关闭。每个 key 可选独立限流（rps/burst，留空用下方默认）。
+api_keys: []
+  # - key: "change-me-in-prod-xxxxxxxx"
+  #   name: "demo-client"
+  #   rps: 5
+  #   burst: 10
+
+# 兜底限流：匿名/未匹配 key 时按客户端 IP 令牌桶限流（常开，默认宽松不影响正常演示）。
+rate_limit:
+  rps: 20
+  burst: 40

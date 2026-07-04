@@ -91,6 +91,7 @@ services:
       TRACE_STORE_ADDR: passthrough:///tracestore:9400
       VIEWER_HTML: /app/tools/trace-viewer/index.html
       STREAM_DEMO_HTML: /app/tools/stream-demo/index.html
+      AUTH_FILE: /app/configs/auth.yaml
     depends_on:
       orchestrator:
         condition: service_healthy

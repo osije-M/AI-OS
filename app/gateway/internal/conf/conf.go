@@ -8,6 +8,7 @@ type Config struct {
 	HTTPAddr         string
 	OrchestratorAddr string
 	TraceStoreAddr   string
+	AuthFile         string
 }
 
 func Load() *Config {
@@ -23,9 +24,14 @@ func Load() *Config {
 	if traceStoreAddr == "" {
 		traceStoreAddr = "127.0.0.1:9400"
 	}
+	authFile := os.Getenv("AUTH_FILE")
+	if authFile == "" {
+		authFile = "configs/auth.yaml"
+	}
 	return &Config{
 		HTTPAddr:         httpAddr,
 		OrchestratorAddr: orchAddr,
 		TraceStoreAddr:   traceStoreAddr,
+		AuthFile:         authFile,
 	}
 }
