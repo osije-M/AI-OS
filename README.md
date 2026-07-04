@@ -56,6 +56,24 @@ Client
 
 ---
 
+## 5 秒启动（docker-compose，推荐）
+
+不装 Go/Python 工具链，一条命令起全部 5 个服务：
+
+```bash
+cp .env.example .env        # 可选：填 DEEPSEEK_API_KEY 接真模型，留空则 offline fallback
+docker compose up --build
+```
+
+起来后访问：
+- `http://localhost:8000/chat` — 流式对话 demo（逐 token 打字机效果）
+- `http://localhost:8000/viewer` — trace 链路查看器
+- `POST http://localhost:8000/v1/run` — 单次任务接口
+
+`docker compose down && docker compose up` 后旧 trace 仍可查（`tracestore` 用命名卷持久化）。
+
+> 可选：接入外部 AI 智能合约审计器（另一仓库 `AI_smart_contract_auditor`）跑 `docker compose --profile full up`，前提是该仓库存在且能构建出 `auditserver` 镜像；核心 5 服务不依赖它。
+
 ## 关键概念（读懂这几个就懂了这个项目）
 
 - **契约先行（contract-first）**：先用 `.proto` 文件把"有哪些服务、每个方法收什么发什么"定义成**语言无关的契约**（在 [`api/proto/`](api/proto/)），再由工具**自动生成各语言代码**：`buf` 生成 Go、`grpcio-tools` 生成 Python。于是 Go 和 Python "说同一种话"，谁都改不动接口而不被对方发现。改接口 = 改 proto → 重新生成 → 两端同步。HTTP 路由也由 proto 的 `google.api.http` 注解生成，连 URL 都是契约的一部分。

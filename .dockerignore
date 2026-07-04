@@ -1,0 +1,9 @@
+docs/
+data/
+bin/
+*.exe
+.git/
+.github/
+**/__pycache__/
+.env
+*.md

@@ -1,0 +1,124 @@
+services:
+  toolservice:
+    build:
+      context: .
+      dockerfile: Dockerfile.go
+    command: /app/toolservice
+    environment:
+      TOOL_SERVICE_ADDR: 0.0.0.0:9200
+      # full profile 手动设为 http://auditserver:9500 以接入外部审计器；核心模式留空。
+      EXTERNAL_TOOLS: ${EXTERNAL_TOOLS:-}
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "9200"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+
+  agentruntime:
+    build:
+      context: .
+      dockerfile: pyagent/Dockerfile
+    environment:
+      AGENT_RUNTIME_ADDR: 0.0.0.0:9100
+      TOOL_SERVICE_ADDR: toolservice:9200
+    env_file:
+      - .env
+    depends_on:
+      toolservice:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket;socket.create_connection(('localhost',9100),2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+
+  tracestore:
+    build:
+      context: .
+      dockerfile: Dockerfile.go
+    command: /app/tracestore
+    environment:
+      TRACE_STORE_ADDR: 0.0.0.0:9400
+      TRACE_STORE_FILE: /app/data/traces.jsonl
+    volumes:
+      - traces:/app/data
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "9400"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile.go
+    command: /app/orchestrator
+    environment:
+      ORCHESTRATOR_ADDR: 0.0.0.0:9300
+      # 拨号侧用 passthrough:/// 让 Go gRPC 走 OS 解析(Docker DNS)，
+      # 绕开 gRPC 自带 dns resolver 在 WSL2/docker 下首次解析过慢导致的短超时 DeadlineExceeded。
+      AGENT_RUNTIME_ADDR: passthrough:///agentruntime:9100
+      TRACE_STORE_ADDR: passthrough:///tracestore:9400
+      POLICY_FILE: /app/configs/policy.yaml
+    env_file:
+      - .env
+    depends_on:
+      agentruntime:
+        condition: service_healthy
+      tracestore:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "9300"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.go
+    command: /app/gateway
+    ports:
+      - "8000:8000"
+    environment:
+      GATEWAY_HTTP_ADDR: 0.0.0.0:8000
+      # passthrough:/// 同上，绕开 gRPC dns resolver 在 docker 下的慢解析。
+      ORCHESTRATOR_ADDR: passthrough:///orchestrator:9300
+      TRACE_STORE_ADDR: passthrough:///tracestore:9400
+      VIEWER_HTML: /app/tools/trace-viewer/index.html
+      STREAM_DEMO_HTML: /app/tools/stream-demo/index.html
+    depends_on:
+      orchestrator:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/ || nc -z localhost 8000"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+
+  # 可选：接入外部 AI 智能合约审计器仓库（../AI_smart_contract_auditor/go）。
+  # 该仓库目前没有自带 Dockerfile；核心 5 服务不依赖此 service。
+  # 如需启用：在审计器仓库补一个 Dockerfile 构建 cmd/auditserver，再
+  # `docker compose --profile full up`。
+  auditserver:
+    profiles: ["full"]
+    build:
+      context: ../AI_smart_contract_auditor/go
+      dockerfile: Dockerfile
+    command: /app/auditserver
+    environment:
+      AUDIT_SERVER_ADDR: 0.0.0.0:9500
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "9500"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+
+volumes:
+  traces:
