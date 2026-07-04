@@ -2,7 +2,7 @@ services:
   toolservice:
     build:
       context: .
-      dockerfile: Dockerfile.go
+      dockerfile: Dockerfile
     command: /app/toolservice
     environment:
       TOOL_SERVICE_ADDR: 0.0.0.0:9200
@@ -37,7 +37,7 @@ services:
   tracestore:
     build:
       context: .
-      dockerfile: Dockerfile.go
+      dockerfile: Dockerfile
     command: /app/tracestore
     environment:
       TRACE_STORE_ADDR: 0.0.0.0:9400
@@ -54,7 +54,7 @@ services:
   orchestrator:
     build:
       context: .
-      dockerfile: Dockerfile.go
+      dockerfile: Dockerfile
     command: /app/orchestrator
     environment:
       ORCHESTRATOR_ADDR: 0.0.0.0:9300
@@ -80,7 +80,7 @@ services:
   gateway:
     build:
       context: .
-      dockerfile: Dockerfile.go
+      dockerfile: Dockerfile
     command: /app/gateway
     ports:
       - "8000:8000"
