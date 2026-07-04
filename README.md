@@ -1,5 +1,9 @@
 # AI-OS — LangGraph × Kratos 的 Agent 编排平台
 
+[![CI](https://github.com/osije/ai-os/actions/workflows/ci.yml/badge.svg)](https://github.com/osije/ai-os/actions/workflows/ci.yml)
+
+*本仓库当前未配置 GitHub 远程仓库；推送到 `github.com/osije/ai-os`（据 go.mod 模块路径推断）后徽章将显示真实状态——若实际仓库名为 `langgraph-kratos-agent`，需相应更新徽章链接。*
+
 > **一句话**：用 **Go/Kratos 写确定性控制面**（4 个微服务）+ **Python/LangGraph 写非确定性智能层**，把 LLM 能力工程化为可控、可扩展、可观测的分布式 Agent 编排系统。
 
 对应架构愿景见 [`AI-Agent-Framework-AIOS-Architecture-v4.md`](AI-Agent-Framework-AIOS-Architecture-v4.md)（企业级蓝图）。本仓库是其**最小可运行纵向切片**的原型实现，按里程碑由薄到厚（M0→M3 已完成）。
