@@ -6,7 +6,7 @@
 # Proto-generated code (api/**/*.pb.go) is already committed to the repo, so
 # this build only runs `go build` — never buf/protoc/go generate.
 
-FROM golang:1.24 AS builder
+FROM golang:1.25 AS builder
 
 WORKDIR /src
 

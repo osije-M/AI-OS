@@ -41,7 +41,7 @@ services:
     command: /app/tracestore
     environment:
       TRACE_STORE_ADDR: 0.0.0.0:9400
-      TRACE_STORE_FILE: /app/data/traces.jsonl
+      TRACE_STORE_FILE: /app/data/traces.db
     volumes:
       - traces:/app/data
     healthcheck:

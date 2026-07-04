@@ -2,17 +2,19 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"testing"
 
 	tracev1 "github.com/osije/ai-os/api/gen/go/trace/v1"
 	"github.com/osije/ai-os/app/tracestore/internal/conf"
+	_ "modernc.org/sqlite"
 )
 
 func TestSaveGetReplay(t *testing.T) {
 	tmpDir := t.TempDir()
-	storeFile := tmpDir + "/traces.jsonl"
+	storeFile := tmpDir + "/traces.db"
 
 	cfg := &conf.Config{
 		GRPCAddr:  "0.0.0.0:19400",
@@ -61,12 +63,11 @@ func TestSaveGetReplay(t *testing.T) {
 		getReply.Trace.TraceId, getReply.Trace.Task, getReply.Trace.Status,
 		getReply.Trace.Route, len(getReply.Trace.Steps))
 
-	// Verify JSONL file was written
-	content, _ := os.ReadFile(storeFile)
-	if len(content) == 0 {
-		t.Fatalf("JSONL file is empty after Save")
+	// Verify SQLite DB file was created
+	if fi, statErr := os.Stat(storeFile); statErr != nil || fi.Size() == 0 {
+		t.Fatalf("SQLite DB file missing/empty after Save: err=%v", statErr)
 	}
-	fmt.Printf("[PASS] JSONL file written (%d bytes)\n", len(content))
+	fmt.Printf("[PASS] SQLite DB file created\n")
 
 	// === Round 2: Simulate restart — new service instance, same JSONL file ===
 	fmt.Printf("\n--- Simulating restart (new instance, same JSONL file) ---\n")
@@ -106,4 +107,64 @@ func TestSaveGetReplay(t *testing.T) {
 	// Close file handles so TempDir can clean up
 	svc.Close()
 	svc2.Close()
+}
+
+// TestListStatsQueryable 证明换 SQLite 后可直接对持久化数据跑聚合统计
+// （这是从 JSONL 换成 SQLite 的核心价值，也为后续 Eval 框架打基础）。
+func TestListStatsQueryable(t *testing.T) {
+	tmpDir := t.TempDir()
+	storeFile := tmpDir + "/traces.db"
+	cfg := &conf.Config{GRPCAddr: "0.0.0.0:19401", StoreFile: storeFile, MaxOutput: 4096}
+	ctx := context.Background()
+
+	svc, err := NewTraceStoreServiceImpl(cfg)
+	if err != nil {
+		t.Fatalf("NewTraceStoreServiceImpl: %v", err)
+	}
+	defer svc.Close()
+
+	seed := []*tracev1.Trace{
+		{TraceId: "t1", Status: "OK", Route: "coding", EndedAt: 100},
+		{TraceId: "t2", Status: "OK", Route: "research", EndedAt: 200},
+		{TraceId: "t3", Status: "FAILED", Route: "audit", EndedAt: 300},
+	}
+	for _, tr := range seed {
+		reply, err := svc.Save(ctx, &tracev1.SaveRequest{Trace: tr})
+		if err != nil || !reply.Ok {
+			t.Fatalf("Save(%s) failed: err=%v ok=%v", tr.TraceId, err, reply)
+		}
+	}
+
+	// 直接对同一个库跑聚合查询，验证按 status 统计
+	db, err := sql.Open("sqlite", storeFile)
+	if err != nil {
+		t.Fatalf("open db for stats: %v", err)
+	}
+	defer db.Close()
+
+	counts := map[string]int{}
+	rows, err := db.QueryContext(ctx, "SELECT status, COUNT(*) FROM traces GROUP BY status")
+	if err != nil {
+		t.Fatalf("stats query: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var status string
+		var n int
+		if err := rows.Scan(&status, &n); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		counts[status] = n
+	}
+	if counts["OK"] != 2 || counts["FAILED"] != 1 {
+		t.Fatalf("stats mismatch: got %v, want OK=2 FAILED=1", counts)
+	}
+
+	// 成功率统计（Eval 框架会用到的那类聚合）
+	var total, ok int
+	_ = db.QueryRowContext(ctx, "SELECT COUNT(*), SUM(CASE WHEN status='OK' THEN 1 ELSE 0 END) FROM traces").Scan(&total, &ok)
+	if total != 3 || ok != 2 {
+		t.Fatalf("success-rate agg mismatch: total=%d ok=%d, want 3/2", total, ok)
+	}
+	fmt.Printf("[PASS] SQL stats over persisted traces: %v, success=%d/%d\n", counts, ok, total)
 }
