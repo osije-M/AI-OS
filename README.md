@@ -6,7 +6,11 @@
 
 > **一句话**：用 **Go/Kratos 写确定性控制面**（4 个微服务）+ **Python/LangGraph 写非确定性智能层**，把 LLM 能力工程化为可控、可扩展、可观测的分布式 Agent 编排系统。
 
-对应架构愿景见 [`AI-Agent-Framework-AIOS-Architecture-v4.md`](AI-Agent-Framework-AIOS-Architecture-v4.md)（企业级蓝图）。本仓库是其**最小可运行纵向切片**的原型实现，按里程碑由薄到厚（M0→M3 已完成）。
+对应架构愿景见 [`AI-Agent-Framework-AIOS-Architecture-v4.md`](AI-Agent-Framework-AIOS-Architecture-v4.md)（企业级蓝图）。本仓库是其**最小可运行纵向切片**的原型实现，按里程碑由薄到厚（M0→M5 已完成，M6 工程化补强进行中）。
+
+![AI-OS 架构与服务拓扑](docs/architecture.svg)
+
+> 上图：**双流模型**——上层 Python/LangGraph 智能层（supervisor 动态路由 → worker → reflect 有界循环），下层 Go/Kratos 确定性控制面（Gateway 入口 → Orchestrator 编排/Policy 防火墙/重试 → ToolService 工具网格 → 可选外部 OSS）；实线为请求流，虚线为可观测 trace 流（TraceStore）。
 
 ---
 
