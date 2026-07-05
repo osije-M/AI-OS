@@ -197,7 +197,8 @@ def _call_tool_audit(source: str, rule_only: bool = False) -> tuple[dict | None,
 # LLM helper - structured return with L1 retry + L3 model-switch
 # ---------------------------------------------------------------------------
 
-def _call_llm(task: str, system_prompt: str = "", timeout_override: float | None = None) -> dict:
+def _call_llm(task: str, system_prompt: str = "", timeout_override: float | None = None,
+              temperature: float | None = None) -> dict:
     """
     Call DeepSeek LLM with L1 retry and L3 model-switch.
 
@@ -205,6 +206,8 @@ def _call_llm(task: str, system_prompt: str = "", timeout_override: float | None
         task:             user/task message
         system_prompt:    optional system message
         timeout_override: override LLM_CALL_TIMEOUT_S for this call (e.g. fast routing)
+        temperature:      sampling temperature; pass 0 for deterministic classification
+                          (routing / reflect). None → provider default (workers).
 
     Returns:
         {
@@ -267,12 +270,15 @@ def _call_llm(task: str, system_prompt: str = "", timeout_override: float | None
             total_attempts += 1
             t0 = _now_ms()
             try:
-                resp = client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    max_tokens=512,
-                    timeout=timeout_s,
-                )
+                create_kwargs = {
+                    "model": model,
+                    "messages": messages,
+                    "max_tokens": 512,
+                    "timeout": timeout_s,
+                }
+                if temperature is not None:
+                    create_kwargs["temperature"] = temperature
+                resp = client.chat.completions.create(**create_kwargs)
                 latency = _now_ms() - t0
                 answer = resp.choices[0].message.content or ""
                 return answer, latency, attempt_count
@@ -351,10 +357,24 @@ def _call_llm(task: str, system_prompt: str = "", timeout_override: float | None
 _ROUTE_LABELS = {"research", "coding", "review", "audit"}
 
 _SYSTEM_PROMPT_ROUTER = (
-    "You are a task router. Classify the user task into exactly one label: "
-    "research, coding, review, or audit. "
-    "Use 'audit' for Solidity smart-contract security auditing tasks. "
-    "Reply with ONLY the label word (lowercase). No punctuation, no explanation."
+    "You are a task router. Read the user task and reply with EXACTLY ONE lowercase label "
+    "from: research, coding, review, audit. No punctuation, no explanation.\n"
+    "\n"
+    "Label definitions:\n"
+    "- research: answer a question, explain a concept, or look up a fact. "
+    "Example: 'What is the capital of France?', 'Who wrote Hamlet?'\n"
+    "- coding: write or implement new code, functions, or algorithms. "
+    "Example: 'Write a function to reverse a string', 'Implement bubble sort'\n"
+    "- review: critique, inspect, or find bugs / vulnerabilities / smells in PROVIDED code or "
+    "text, including general security review of ordinary code. "
+    "Example: 'Review this code for bugs', 'Inspect this snippet for security vulnerabilities'\n"
+    "- audit: ONLY for auditing Solidity / smart-contract code (reentrancy, on-chain security). "
+    "Example: 'Audit this Solidity contract for reentrancy'\n"
+    "\n"
+    "Important: use 'audit' ONLY when the task is clearly about Solidity or smart contracts. "
+    "General security or vulnerability review of ordinary code is 'review', NOT 'audit'. "
+    "Plain factual questions are 'research'. When unsure, prefer research.\n"
+    "Reply with only the label word."
 )
 
 # Audit keywords: Solidity-specific signals that unambiguously indicate smart-contract audit.
@@ -423,7 +443,8 @@ def _llm_route(task: str) -> str:
 
     route_timeout = _env_float("LLM_ROUTE_TIMEOUT_S", 8.0)
     try:
-        res = _call_llm(task, system_prompt=_SYSTEM_PROMPT_ROUTER, timeout_override=route_timeout)
+        res = _call_llm(task, system_prompt=_SYSTEM_PROMPT_ROUTER, timeout_override=route_timeout,
+                        temperature=0)
     except Exception:
         return _keyword_route(task)
     if not res["ok"]:
@@ -636,7 +657,8 @@ def reflect_node(state: AgentState) -> AgentState:
         )
         reflect_task = f"TASK: {task}\n\nANSWER: {output}"
         reflect_timeout = _env_float("LLM_REFLECT_TIMEOUT_S", 10.0)
-        res = _call_llm(reflect_task, system_prompt=reflect_system, timeout_override=reflect_timeout)
+        res = _call_llm(reflect_task, system_prompt=reflect_system, timeout_override=reflect_timeout,
+                        temperature=0)
 
         if not res["ok"]:
             # LLM failed during reflect: conservatively PASS (don't add loop overhead)

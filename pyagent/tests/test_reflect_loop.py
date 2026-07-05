@@ -52,7 +52,7 @@ def test_reflect_retry_when_llm_says_retry(monkeypatch):
     monkeypatch.setenv("DEEPSEEK_API_KEY", "fake-key-for-test")
     monkeypatch.setattr(graph, "MAX_LOOPS", 3)
 
-    def fake_call_llm(task, system_prompt="", timeout_override=None):
+    def fake_call_llm(task, system_prompt="", timeout_override=None, temperature=None):
         return {
             "output": "RETRY: needs more detail",
             "latency_ms": 5,
@@ -76,7 +76,7 @@ def test_reflect_conservative_pass_when_llm_not_ok(monkeypatch):
     monkeypatch.setenv("DEEPSEEK_API_KEY", "fake-key-for-test")
     monkeypatch.setattr(graph, "MAX_LOOPS", 3)
 
-    def fake_call_llm(task, system_prompt="", timeout_override=None):
+    def fake_call_llm(task, system_prompt="", timeout_override=None, temperature=None):
         return {
             "output": "",
             "latency_ms": 5,
