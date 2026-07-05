@@ -1,0 +1,17 @@
+# audit 专项基准集——需 `docker compose --profile full up`（auditserver 在线）后运行：
+#   evalctl -suite eval/suite-audit.yaml
+# 核心 profile 下 audit 路由会 FAILED（无 auditserver），故与主 suite 分开。
+# 用于验证：Solidity/智能合约任务正确路由到 audit + 经 Tool Mesh 调真实审计器返回结论。
+tasks:
+  - id: audit-reentrancy
+    task: "Audit this Solidity contract for reentrancy vulnerabilities."
+    expect_route: audit
+    expect_status: OK
+  - id: audit-pragma
+    task: "pragma solidity ^0.8.0; contract Bank { function withdraw() public {} } — audit this contract."
+    expect_route: audit
+    expect_status: OK
+  - id: audit-cn
+    task: "审计这个智能合约是否存在重入漏洞。"
+    expect_route: audit
+    expect_status: OK
