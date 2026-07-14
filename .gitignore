@@ -15,8 +15,11 @@ venv/
 pyagent/gen/
 .pytest_cache/
 
-# 方案文档（本地保留，不入库）
+# 开发过程文档（本地保留，不入库；准则见 docs/DEVELOPMENT.md）
 docs/方案/
+docs/归档/
+docs/DEVELOPMENT.md
+/CLAUDE.md
 
 # trace-store 运行时数据
 /data/
