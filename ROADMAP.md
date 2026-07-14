@@ -57,9 +57,11 @@
 - [x] M6-B①：TraceStore 持久化从 JSONL 换成 SQLite（可查询/可统计）
 - [x] M6-B②：Gateway API Key 鉴权 + 令牌桶限流
 - [x] M6-B③：`evalctl` 评测框架（端到端基准 + 独立 `eval.db`，`-strict` 预留 CI 门禁用途）
-- [ ] M6-C①（进行中）：eval 回归门禁接入 CI——新增 `eval/suite-offline.yaml`（12 条确定性用例）+
+- [x] M6-C①：eval 回归门禁接入 CI——新增 `eval/suite-offline.yaml`（12 条确定性用例）+
       `pyagent/tests/test_offline_routing.py`（关键词路由秒级快挂）+ ci.yml 新增 `eval-offline` job
-      （compose 起全栈 → 离线基准跑 `evalctl -strict` → 失败输出 compose logs → 无论成败 compose down）
+      （compose 起全栈 → 离线基准跑 `evalctl -strict` → 失败输出 compose logs → 无论成败 compose down）。
+      门禁首跑即抓到存量缺陷：agentruntime 镜像依赖本地 gitignored 的 `pyagent/gen/`，干净 checkout
+      起不来——已改为镜像内自生成 stubs（自洽构建），"新 clone compose up 即跑"自此真实成立
 
 ## 暂不实现（v4 里、原型阶段留白）
 Kafka/NATS 消息总线、Self-Healing、Plugin Runtime(WASM/容器)、ClickHouse、K8s/Canary/Chaos、Graph IR/DSL 自研引擎、Arbiter 仲裁、向量记忆。
