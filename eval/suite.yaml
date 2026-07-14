@@ -1,5 +1,6 @@
 # AI-OS 评测基准集（evalctl 使用）——核心 profile 可跑（research/coding/review + policy deny）。
 # audit 用例需 `docker compose --profile full up`（auditserver 在线），单独放 eval/suite-audit.yaml。
+# 离线门禁集见 eval/suite-offline.yaml（CI 用，只放关键词兜底行为确定性的用例）。
 #
 # 字段：
 #   id            用例唯一标识

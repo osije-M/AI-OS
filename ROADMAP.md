@@ -49,6 +49,18 @@
 
 > 至此 M0→M5 全部达成。"演示→可信作品"补强里，流式输出已落地。
 
+## M6 — 工程化补强（"演示→可信作品"）
+
+- [x] 切片1：`docker-compose.yml` 一键起 5 服务（无 auditserver 时 `full` profile 可选接入）
+- [x] 切片2：Go/Python 单元测试补全 + GitHub Actions CI（go / python 两个 job）
+- [x] 切片3：架构图 SVG + README 首屏
+- [x] M6-B①：TraceStore 持久化从 JSONL 换成 SQLite（可查询/可统计）
+- [x] M6-B②：Gateway API Key 鉴权 + 令牌桶限流
+- [x] M6-B③：`evalctl` 评测框架（端到端基准 + 独立 `eval.db`，`-strict` 预留 CI 门禁用途）
+- [ ] M6-C①（进行中）：eval 回归门禁接入 CI——新增 `eval/suite-offline.yaml`（12 条确定性用例）+
+      `pyagent/tests/test_offline_routing.py`（关键词路由秒级快挂）+ ci.yml 新增 `eval-offline` job
+      （compose 起全栈 → 离线基准跑 `evalctl -strict` → 失败输出 compose logs → 无论成败 compose down）
+
 ## 暂不实现（v4 里、原型阶段留白）
 Kafka/NATS 消息总线、Self-Healing、Plugin Runtime(WASM/容器)、ClickHouse、K8s/Canary/Chaos、Graph IR/DSL 自研引擎、Arbiter 仲裁、向量记忆。
 均写为占位接口或扩展点，不在原型实现。

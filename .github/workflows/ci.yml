@@ -30,3 +30,24 @@ jobs:
         run: pip install -r pyagent/requirements.txt pytest
       - name: Test
         run: pytest pyagent -q
+
+  eval-offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare .env (offline, no API key)
+        run: cp .env.example .env
+      - name: Compose up full stack
+        run: docker compose up -d --build --wait
+        timeout-minutes: 15
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: Run offline eval suite (strict gate)
+        run: go run ./cmd/evalctl -suite eval/suite-offline.yaml -db /tmp/eval-ci.db -strict
+      - name: Dump compose logs on failure
+        if: failure()
+        run: docker compose logs
+      - name: Compose down
+        if: always()
+        run: docker compose down -v
