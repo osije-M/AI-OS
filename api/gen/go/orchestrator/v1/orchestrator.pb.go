@@ -163,13 +163,15 @@ func (x *RunTaskRequest) GetParams() map[string]string {
 }
 
 type RunTaskReply struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TraceId       string                 `protobuf:"bytes,1,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
-	Output        string                 `protobuf:"bytes,2,opt,name=output,proto3" json:"output,omitempty"`
-	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`                                    // OK / FAILED
-	NodeSummaries []string               `protobuf:"bytes,4,rep,name=node_summaries,json=nodeSummaries,proto3" json:"node_summaries,omitempty"` // 节点轨迹摘要（给客户端的精简视图）
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	TraceId          string                 `protobuf:"bytes,1,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
+	Output           string                 `protobuf:"bytes,2,opt,name=output,proto3" json:"output,omitempty"`
+	Status           string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`                                              // OK / FAILED
+	NodeSummaries    []string               `protobuf:"bytes,4,rep,name=node_summaries,json=nodeSummaries,proto3" json:"node_summaries,omitempty"`           // 节点轨迹摘要（给客户端的精简视图）
+	PromptTokens     int32                  `protobuf:"varint,5,opt,name=prompt_tokens,json=promptTokens,proto3" json:"prompt_tokens,omitempty"`             // M6-C② 从 agent.v1.RunGraphReply 透传
+	CompletionTokens int32                  `protobuf:"varint,6,opt,name=completion_tokens,json=completionTokens,proto3" json:"completion_tokens,omitempty"` // M6-C② 从 agent.v1.RunGraphReply 透传
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *RunTaskReply) Reset() {
@@ -230,6 +232,20 @@ func (x *RunTaskReply) GetNodeSummaries() []string {
 	return nil
 }
 
+func (x *RunTaskReply) GetPromptTokens() int32 {
+	if x != nil {
+		return x.PromptTokens
+	}
+	return 0
+}
+
+func (x *RunTaskReply) GetCompletionTokens() int32 {
+	if x != nil {
+		return x.CompletionTokens
+	}
+	return 0
+}
+
 var File_orchestrator_v1_orchestrator_proto protoreflect.FileDescriptor
 
 const file_orchestrator_v1_orchestrator_proto_rawDesc = "" +
@@ -247,12 +263,14 @@ const file_orchestrator_v1_orchestrator_proto_rawDesc = "" +
 	"\x06params\x18\x03 \x03(\v20.aios.orchestrator.v1.RunTaskRequest.ParamsEntryR\x06params\x1a9\n" +
 	"\vParamsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x80\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd2\x01\n" +
 	"\fRunTaskReply\x12\x19\n" +
 	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12\x16\n" +
 	"\x06output\x18\x02 \x01(\tR\x06output\x12\x16\n" +
 	"\x06status\x18\x03 \x01(\tR\x06status\x12%\n" +
-	"\x0enode_summaries\x18\x04 \x03(\tR\rnodeSummaries2\xbf\x01\n" +
+	"\x0enode_summaries\x18\x04 \x03(\tR\rnodeSummaries\x12#\n" +
+	"\rprompt_tokens\x18\x05 \x01(\x05R\fpromptTokens\x12+\n" +
+	"\x11completion_tokens\x18\x06 \x01(\x05R\x10completionTokens2\xbf\x01\n" +
 	"\fOrchestrator\x12S\n" +
 	"\aRunTask\x12$.aios.orchestrator.v1.RunTaskRequest\x1a\".aios.orchestrator.v1.RunTaskReply\x12Z\n" +
 	"\rRunTaskStream\x12$.aios.orchestrator.v1.RunTaskRequest\x1a!.aios.orchestrator.v1.StreamEvent0\x01BBZ@github.com/osije/ai-os/api/gen/go/orchestrator/v1;orchestratorv1b\x06proto3"

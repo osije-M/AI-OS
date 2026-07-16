@@ -92,6 +92,8 @@ class AgentRuntimeServicer(agent_pb2_grpc.AgentRuntimeServicer):
                         status=ev.get("status", "FAILED"),
                         route=ev.get("route", ""),
                         trace=trace_protos,
+                        prompt_tokens=ev.get("prompt_tokens", 0),
+                        completion_tokens=ev.get("completion_tokens", 0),
                     )
                     elapsed_ms = int((time.monotonic() - t_start) * 1000)
                     logger.info(
@@ -169,6 +171,8 @@ class AgentRuntimeServicer(agent_pb2_grpc.AgentRuntimeServicer):
             status=status,
             trace=trace_protos,
             route=result.get("route", ""),
+            prompt_tokens=result.get("prompt_tokens", 0),
+            completion_tokens=result.get("completion_tokens", 0),
         )
 
 

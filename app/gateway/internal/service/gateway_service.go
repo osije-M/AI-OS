@@ -68,9 +68,11 @@ func (g *GatewayServiceImpl) Run(ctx context.Context, req *gatewayv1.RunRequest)
 		return &gatewayv1.RunReply{Status: "FAILED", Output: err.Error()}, nil
 	}
 	return &gatewayv1.RunReply{
-		TraceId: reply.TraceId,
-		Output:  reply.Output,
-		Status:  reply.Status,
+		TraceId:          reply.TraceId,
+		Output:           reply.Output,
+		Status:           reply.Status,
+		PromptTokens:     reply.PromptTokens,
+		CompletionTokens: reply.CompletionTokens,
 	}, nil
 }
 
@@ -207,6 +209,9 @@ func (g *GatewayServiceImpl) HandleRunStream(ctx khttp.Context) error {
 				payload["status"] = ev.Final.Status
 				// route is not in orchestrator RunTaskReply, set empty
 				payload["route"] = ""
+				// M6-C②：真实 LLM usage（offline 为 0）
+				payload["prompt_tokens"] = ev.Final.PromptTokens
+				payload["completion_tokens"] = ev.Final.CompletionTokens
 			}
 		case "token":
 			payload = map[string]interface{}{

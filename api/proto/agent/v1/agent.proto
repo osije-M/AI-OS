@@ -36,6 +36,8 @@ message RunGraphReply {
   string status = 3;               // OK / FAILED
   repeated NodeTrace trace = 4;    // 逐节点执行轨迹（对应 v4 的 Observability/Trace）
   string route = 5;                // supervisor 的路由决策：research / coding / review
+  int32 prompt_tokens = 6;         // M6-C② 累计 prompt token 用量（offline 为 0）
+  int32 completion_tokens = 7;     // M6-C② 累计 completion token 用量（offline 为 0）
 }
 
 // 单个节点的执行记录。

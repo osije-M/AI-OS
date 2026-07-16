@@ -62,6 +62,9 @@
       （compose 起全栈 → 离线基准跑 `evalctl -strict` → 失败输出 compose logs → 无论成败 compose down）。
       门禁首跑即抓到存量缺陷：agentruntime 镜像依赖本地 gitignored 的 `pyagent/gen/`，干净 checkout
       起不来——已改为镜像内自生成 stubs（自洽构建），"新 clone compose up 即跑"自此真实成立
+- [x] M6-C②：运行时指标观测——契约加 token 用量字段（pyagent 聚合真实 usage：router+worker+reflect
+      累计，stream 走 include_usage 带降级；agent→orchestrator→gateway 逐层透传），orchestrator 暴露
+      Prometheus `/metrics`（:9301）：请求量/延迟分布/policy 拒绝/token 用量/估算成本 5 组 `aios_*` 指标
 
 ## 暂不实现（v4 里、原型阶段留白）
 Kafka/NATS 消息总线、Self-Healing、Plugin Runtime(WASM/容器)、ClickHouse、K8s/Canary/Chaos、Graph IR/DSL 自研引擎、Arbiter 仲裁、向量记忆。

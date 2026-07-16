@@ -170,14 +170,16 @@ func (x *RunGraphRequest) GetParams() map[string]string {
 }
 
 type RunGraphReply struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TraceId       string                 `protobuf:"bytes,1,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
-	Output        string                 `protobuf:"bytes,2,opt,name=output,proto3" json:"output,omitempty"` // 最终回答
-	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"` // OK / FAILED
-	Trace         []*NodeTrace           `protobuf:"bytes,4,rep,name=trace,proto3" json:"trace,omitempty"`   // 逐节点执行轨迹（对应 v4 的 Observability/Trace）
-	Route         string                 `protobuf:"bytes,5,opt,name=route,proto3" json:"route,omitempty"`   // supervisor 的路由决策：research / coding / review
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	TraceId          string                 `protobuf:"bytes,1,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
+	Output           string                 `protobuf:"bytes,2,opt,name=output,proto3" json:"output,omitempty"`                                              // 最终回答
+	Status           string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`                                              // OK / FAILED
+	Trace            []*NodeTrace           `protobuf:"bytes,4,rep,name=trace,proto3" json:"trace,omitempty"`                                                // 逐节点执行轨迹（对应 v4 的 Observability/Trace）
+	Route            string                 `protobuf:"bytes,5,opt,name=route,proto3" json:"route,omitempty"`                                                // supervisor 的路由决策：research / coding / review
+	PromptTokens     int32                  `protobuf:"varint,6,opt,name=prompt_tokens,json=promptTokens,proto3" json:"prompt_tokens,omitempty"`             // M6-C② 累计 prompt token 用量（offline 为 0）
+	CompletionTokens int32                  `protobuf:"varint,7,opt,name=completion_tokens,json=completionTokens,proto3" json:"completion_tokens,omitempty"` // M6-C② 累计 completion token 用量（offline 为 0）
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *RunGraphReply) Reset() {
@@ -243,6 +245,20 @@ func (x *RunGraphReply) GetRoute() string {
 		return x.Route
 	}
 	return ""
+}
+
+func (x *RunGraphReply) GetPromptTokens() int32 {
+	if x != nil {
+		return x.PromptTokens
+	}
+	return 0
+}
+
+func (x *RunGraphReply) GetCompletionTokens() int32 {
+	if x != nil {
+		return x.CompletionTokens
+	}
+	return 0
 }
 
 // 单个节点的执行记录。
@@ -332,13 +348,15 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\x06params\x18\x04 \x03(\v2*.aios.agent.v1.RunGraphRequest.ParamsEntryR\x06params\x1a9\n" +
 	"\vParamsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa0\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xf2\x01\n" +
 	"\rRunGraphReply\x12\x19\n" +
 	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12\x16\n" +
 	"\x06output\x18\x02 \x01(\tR\x06output\x12\x16\n" +
 	"\x06status\x18\x03 \x01(\tR\x06status\x12.\n" +
 	"\x05trace\x18\x04 \x03(\v2\x18.aios.agent.v1.NodeTraceR\x05trace\x12\x14\n" +
-	"\x05route\x18\x05 \x01(\tR\x05route\"l\n" +
+	"\x05route\x18\x05 \x01(\tR\x05route\x12#\n" +
+	"\rprompt_tokens\x18\x06 \x01(\x05R\fpromptTokens\x12+\n" +
+	"\x11completion_tokens\x18\a \x01(\x05R\x10completionTokens\"l\n" +
 	"\tNodeTrace\x12\x12\n" +
 	"\x04node\x18\x01 \x01(\tR\x04node\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x18\n" +

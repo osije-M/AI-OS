@@ -80,12 +80,14 @@ func (x *RunRequest) GetAgent() string {
 }
 
 type RunReply struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TraceId       string                 `protobuf:"bytes,1,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
-	Output        string                 `protobuf:"bytes,2,opt,name=output,proto3" json:"output,omitempty"`
-	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	TraceId          string                 `protobuf:"bytes,1,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
+	Output           string                 `protobuf:"bytes,2,opt,name=output,proto3" json:"output,omitempty"`
+	Status           string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	PromptTokens     int32                  `protobuf:"varint,4,opt,name=prompt_tokens,json=promptTokens,proto3" json:"prompt_tokens,omitempty"`             // M6-C② 从 orchestrator.v1.RunTaskReply 透传，HTTP JSON 输出 promptTokens
+	CompletionTokens int32                  `protobuf:"varint,5,opt,name=completion_tokens,json=completionTokens,proto3" json:"completion_tokens,omitempty"` // M6-C② 从 orchestrator.v1.RunTaskReply 透传，HTTP JSON 输出 completionTokens
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *RunReply) Reset() {
@@ -139,6 +141,20 @@ func (x *RunReply) GetStatus() string {
 	return ""
 }
 
+func (x *RunReply) GetPromptTokens() int32 {
+	if x != nil {
+		return x.PromptTokens
+	}
+	return 0
+}
+
+func (x *RunReply) GetCompletionTokens() int32 {
+	if x != nil {
+		return x.CompletionTokens
+	}
+	return 0
+}
+
 var File_gateway_v1_gateway_proto protoreflect.FileDescriptor
 
 const file_gateway_v1_gateway_proto_rawDesc = "" +
@@ -147,11 +163,13 @@ const file_gateway_v1_gateway_proto_rawDesc = "" +
 	"\n" +
 	"RunRequest\x12\x12\n" +
 	"\x04task\x18\x01 \x01(\tR\x04task\x12\x14\n" +
-	"\x05agent\x18\x02 \x01(\tR\x05agent\"U\n" +
+	"\x05agent\x18\x02 \x01(\tR\x05agent\"\xa7\x01\n" +
 	"\bRunReply\x12\x19\n" +
 	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12\x16\n" +
 	"\x06output\x18\x02 \x01(\tR\x06output\x12\x16\n" +
-	"\x06status\x18\x03 \x01(\tR\x06status2\\\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12#\n" +
+	"\rprompt_tokens\x18\x04 \x01(\x05R\fpromptTokens\x12+\n" +
+	"\x11completion_tokens\x18\x05 \x01(\x05R\x10completionTokens2\\\n" +
 	"\aGateway\x12Q\n" +
 	"\x03Run\x12\x1b.aios.gateway.v1.RunRequest\x1a\x19.aios.gateway.v1.RunReply\"\x12\x82\xd3\xe4\x93\x02\f:\x01*\"\a/v1/runB8Z6github.com/osije/ai-os/api/gen/go/gateway/v1;gatewayv1b\x06proto3"
 

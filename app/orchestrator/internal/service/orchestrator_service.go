@@ -15,6 +15,7 @@ import (
 	orchestratorv1 "github.com/osije/ai-os/api/gen/go/orchestrator/v1"
 	tracev1 "github.com/osije/ai-os/api/gen/go/trace/v1"
 	"github.com/osije/ai-os/app/orchestrator/internal/conf"
+	"github.com/osije/ai-os/app/orchestrator/internal/metrics"
 	"github.com/osije/ai-os/app/orchestrator/internal/policy"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -30,9 +31,10 @@ type OrchestratorServiceImpl struct {
 	backoffMs      int
 	traceStoreAddr string
 	policyEngine   *policy.Engine
+	metrics        *metrics.Metrics // M6-C②，可为 nil（如测试里裸构造），埋点处判空
 }
 
-func NewOrchestratorServiceImpl(cfg *conf.Config) *OrchestratorServiceImpl {
+func NewOrchestratorServiceImpl(cfg *conf.Config, m *metrics.Metrics) *OrchestratorServiceImpl {
 	engine, _ := policy.Load(cfg.PolicyFile) // Load 失败已降级，不会 panic
 	return &OrchestratorServiceImpl{
 		agentAddr:      cfg.AgentRuntimeAddr,
@@ -40,6 +42,26 @@ func NewOrchestratorServiceImpl(cfg *conf.Config) *OrchestratorServiceImpl {
 		backoffMs:      cfg.BackoffMs,
 		traceStoreAddr: cfg.TraceStoreAddr,
 		policyEngine:   engine,
+		metrics:        m,
+	}
+}
+
+// recordRequest / recordDenial / recordUsage: nil 安全的埋点封装。
+func (s *OrchestratorServiceImpl) recordRequest(route, status string, elapsedMs int64) {
+	if s.metrics != nil {
+		s.metrics.RecordRequest(route, status, elapsedMs)
+	}
+}
+
+func (s *OrchestratorServiceImpl) recordDenial() {
+	if s.metrics != nil {
+		s.metrics.RecordPolicyDenial()
+	}
+}
+
+func (s *OrchestratorServiceImpl) recordUsage(route string, promptTokens, completionTokens int32) {
+	if s.metrics != nil {
+		s.metrics.RecordUsage(route, promptTokens, completionTokens)
 	}
 }
 
@@ -178,6 +200,8 @@ func (s *OrchestratorServiceImpl) RunTask(ctx context.Context, req *orchestrator
 		endedAt := time.Now().UnixMilli()
 		go s.captureDeniedTrace(traceID, req.Task, decision.Reason, policyStep, startedAt, endedAt)
 		log.Printf("[orchestrator] policy DENIED trace=%s reason=%s", traceID, decision.Reason)
+		s.recordDenial()
+		s.recordRequest("", "DENIED", endedAt-startedAt)
 		return &orchestratorv1.RunTaskReply{
 			TraceId: traceID,
 			Status:  "DENIED",
@@ -197,6 +221,7 @@ func (s *OrchestratorServiceImpl) RunTask(ctx context.Context, req *orchestrator
 	conn, err := grpc.NewClient(s.agentAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Printf("[orchestrator] failed to dial agent runtime %s: %v", s.agentAddr, err)
+		s.recordRequest("", "FAILED", time.Now().UnixMilli()-startedAt)
 		return &orchestratorv1.RunTaskReply{
 			TraceId: traceID,
 			Status:  "FAILED",
@@ -237,6 +262,7 @@ func (s *OrchestratorServiceImpl) RunTask(ctx context.Context, req *orchestrator
 
 	if err != nil {
 		log.Printf("[orchestrator] RunGraph final error after %d attempt(s): %v", s.maxRetries+1, err)
+		s.recordRequest("", "FAILED", endedAt-startedAt)
 		return &orchestratorv1.RunTaskReply{
 			TraceId: traceID,
 			Status:  "FAILED",
@@ -252,11 +278,16 @@ func (s *OrchestratorServiceImpl) RunTask(ctx context.Context, req *orchestrator
 		summaries = append(summaries, fmt.Sprintf("[%s/%s] %s (%dms)", t.Node, t.Type, t.Summary, t.LatencyMs))
 	}
 
+	s.recordRequest(reply.Route, reply.Status, endedAt-startedAt)
+	s.recordUsage(reply.Route, reply.PromptTokens, reply.CompletionTokens)
+
 	return &orchestratorv1.RunTaskReply{
-		TraceId:       reply.TraceId,
-		Output:        reply.Output,
-		Status:        reply.Status,
-		NodeSummaries: summaries,
+		TraceId:          reply.TraceId,
+		Output:           reply.Output,
+		Status:           reply.Status,
+		NodeSummaries:    summaries,
+		PromptTokens:     reply.PromptTokens,
+		CompletionTokens: reply.CompletionTokens,
 	}, nil
 }
 
@@ -291,6 +322,8 @@ func (s *OrchestratorServiceImpl) RunTaskStream(req *orchestratorv1.RunTaskReque
 		})
 		go s.captureDeniedTrace(traceID, req.Task, decision.Reason, policyStep, startedAt, endedAt)
 		log.Printf("[orchestrator] stream policy DENIED trace=%s reason=%s", traceID, decision.Reason)
+		s.recordDenial()
+		s.recordRequest("", "DENIED", endedAt-startedAt)
 		return nil
 	}
 
@@ -313,6 +346,7 @@ func (s *OrchestratorServiceImpl) RunTaskStream(req *orchestratorv1.RunTaskReque
 			TraceId: traceID,
 			Content: fmt.Sprintf("failed to connect to agent runtime: %v", err),
 		})
+		s.recordRequest("", "FAILED", time.Now().UnixMilli()-startedAt)
 		return nil
 	}
 	defer conn.Close()
@@ -331,6 +365,7 @@ func (s *OrchestratorServiceImpl) RunTaskStream(req *orchestratorv1.RunTaskReque
 			TraceId: traceID,
 			Content: fmt.Sprintf("agent stream error: %v", err),
 		})
+		s.recordRequest("", "FAILED", time.Now().UnixMilli()-startedAt)
 		return nil
 	}
 
@@ -350,6 +385,7 @@ func (s *OrchestratorServiceImpl) RunTaskStream(req *orchestratorv1.RunTaskReque
 				TraceId: traceID,
 				Content: recvErr.Error(),
 			})
+			s.recordRequest("", "FAILED", time.Now().UnixMilli()-startedAt)
 			break
 		}
 
@@ -379,6 +415,7 @@ func (s *OrchestratorServiceImpl) RunTaskStream(req *orchestratorv1.RunTaskReque
 			output := fullOutput
 			agentStatus := "OK"
 			var route string
+			var promptTokens, completionTokens int32
 			if ev.Final != nil {
 				if ev.Final.Output != "" {
 					output = ev.Final.Output
@@ -388,6 +425,8 @@ func (s *OrchestratorServiceImpl) RunTaskStream(req *orchestratorv1.RunTaskReque
 				}
 				route = ev.Final.Route
 				agentTrace = ev.Final.Trace
+				promptTokens = ev.Final.PromptTokens
+				completionTokens = ev.Final.CompletionTokens
 			}
 
 			// Build NodeSummaries
@@ -397,10 +436,12 @@ func (s *OrchestratorServiceImpl) RunTaskStream(req *orchestratorv1.RunTaskReque
 			}
 
 			finalReply := &orchestratorv1.RunTaskReply{
-				TraceId:       traceID,
-				Output:        output,
-				Status:        agentStatus,
-				NodeSummaries: summaries,
+				TraceId:          traceID,
+				Output:           output,
+				Status:           agentStatus,
+				NodeSummaries:    summaries,
+				PromptTokens:     promptTokens,
+				CompletionTokens: completionTokens,
 			}
 			if sendErr := stream.Send(&orchestratorv1.StreamEvent{
 				Type:    "done",
@@ -409,6 +450,9 @@ func (s *OrchestratorServiceImpl) RunTaskStream(req *orchestratorv1.RunTaskReque
 			}); sendErr != nil {
 				return sendErr
 			}
+
+			s.recordRequest(route, agentStatus, endedAt-startedAt)
+			s.recordUsage(route, promptTokens, completionTokens)
 
 			// Best-effort capture trace
 			syntheticReply := &agentv1.RunGraphReply{

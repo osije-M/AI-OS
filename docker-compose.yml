@@ -63,6 +63,10 @@ services:
       AGENT_RUNTIME_ADDR: passthrough:///agentruntime:9100
       TRACE_STORE_ADDR: passthrough:///tracestore:9400
       POLICY_FILE: /app/configs/policy.yaml
+      # M6-C②：Prometheus /metrics
+      METRICS_ADDR: 0.0.0.0:9301
+    ports:
+      - "9301:9301"
     env_file:
       - .env
     depends_on:

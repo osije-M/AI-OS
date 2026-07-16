@@ -28,4 +28,6 @@ message RunReply {
   string trace_id = 1;
   string output = 2;
   string status = 3;
+  int32 prompt_tokens = 4;      // M6-C② 从 orchestrator.v1.RunTaskReply 透传，HTTP JSON 输出 promptTokens
+  int32 completion_tokens = 5;  // M6-C② 从 orchestrator.v1.RunTaskReply 透传，HTTP JSON 输出 completionTokens
 }

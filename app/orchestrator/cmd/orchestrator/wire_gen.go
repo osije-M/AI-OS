@@ -9,6 +9,7 @@ package main
 import (
 	"github.com/go-kratos/kratos/v2"
 	"github.com/osije/ai-os/app/orchestrator/internal/conf"
+	"github.com/osije/ai-os/app/orchestrator/internal/metrics"
 	"github.com/osije/ai-os/app/orchestrator/internal/server"
 	"github.com/osije/ai-os/app/orchestrator/internal/service"
 )
@@ -17,8 +18,9 @@ import (
 
 func initApp() (*kratos.App, error) {
 	config := conf.Load()
-	orchestratorServiceImpl := service.NewOrchestratorServiceImpl(config)
+	metricsMetrics := metrics.New()
+	orchestratorServiceImpl := service.NewOrchestratorServiceImpl(config, metricsMetrics)
 	grpcServer := server.NewGRPCServer(config, orchestratorServiceImpl)
-	app := newApp(grpcServer)
+	app := newApp(config, grpcServer, metricsMetrics)
 	return app, nil
 }

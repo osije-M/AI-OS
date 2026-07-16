@@ -12,6 +12,7 @@ type Config struct {
 	BackoffMs        int // ORCH_RETRY_BACKOFF_MS，默认 300
 	TraceStoreAddr   string
 	PolicyFile       string
+	MetricsAddr      string // METRICS_ADDR，默认 :9301（M6-C② Prometheus /metrics）
 }
 
 func Load() *Config {
@@ -44,6 +45,11 @@ func Load() *Config {
 		policyFile = "configs/policy.yaml"
 	}
 
+	metricsAddr := os.Getenv("METRICS_ADDR")
+	if metricsAddr == "" {
+		metricsAddr = ":9301"
+	}
+
 	return &Config{
 		GRPCAddr:         addr,
 		AgentRuntimeAddr: agentAddr,
@@ -51,5 +57,6 @@ func Load() *Config {
 		BackoffMs:        backoffMs,
 		TraceStoreAddr:   traceStoreAddr,
 		PolicyFile:       policyFile,
+		MetricsAddr:      metricsAddr,
 	}
 }

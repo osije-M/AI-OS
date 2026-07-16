@@ -33,4 +33,6 @@ message RunTaskReply {
   string output = 2;
   string status = 3;                  // OK / FAILED
   repeated string node_summaries = 4; // 节点轨迹摘要（给客户端的精简视图）
+  int32 prompt_tokens = 5;            // M6-C② 从 agent.v1.RunGraphReply 透传
+  int32 completion_tokens = 6;        // M6-C② 从 agent.v1.RunGraphReply 透传
 }

@@ -75,6 +75,8 @@ class AgentState(TypedDict):
     trace: list[dict[str, Any]]
     llm_ok: bool              # True if at least one LLM call succeeded
     loop_count: int           # reflect -> worker cycles so far
+    prompt_tokens: int        # cumulative prompt tokens across all LLM calls (router+worker+reflect)
+    completion_tokens: int    # cumulative completion tokens across all LLM calls
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +219,8 @@ def _call_llm(task: str, system_prompt: str = "", timeout_override: float | None
           "model_used": str,
           "attempts":   int,
           "events":     list[dict],  # NodeTrace entries for retry/switch events
+          "prompt_tokens":     int,  # from resp.usage.prompt_tokens; 0 offline/on failure
+          "completion_tokens": int,  # from resp.usage.completion_tokens; 0 offline/on failure
         }
 
     Offline (no DEEPSEEK_API_KEY): returns echo immediately, ok=True.
@@ -230,6 +234,8 @@ def _call_llm(task: str, system_prompt: str = "", timeout_override: float | None
             "model_used": "offline",
             "attempts": 0,
             "events": [],
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
         }
 
     base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
@@ -259,8 +265,8 @@ def _call_llm(task: str, system_prompt: str = "", timeout_override: float | None
     events: list[dict] = []
     total_attempts = 0
 
-    def _try_model(model: str) -> tuple[str, int, int]:
-        """Try one model with L1 retry. Returns (output, latency_ms, attempts)."""
+    def _try_model(model: str) -> tuple[str, int, int, int, int]:
+        """Try one model with L1 retry. Returns (output, latency_ms, attempts, prompt_tokens, completion_tokens)."""
         nonlocal total_attempts
         attempt_count = 0
         last_exc = None
@@ -281,7 +287,12 @@ def _call_llm(task: str, system_prompt: str = "", timeout_override: float | None
                 resp = client.chat.completions.create(**create_kwargs)
                 latency = _now_ms() - t0
                 answer = resp.choices[0].message.content or ""
-                return answer, latency, attempt_count
+                prompt_tokens = 0
+                completion_tokens = 0
+                if getattr(resp, "usage", None) is not None:
+                    prompt_tokens = getattr(resp.usage, "prompt_tokens", 0) or 0
+                    completion_tokens = getattr(resp.usage, "completion_tokens", 0) or 0
+                return answer, latency, attempt_count, prompt_tokens, completion_tokens
             except RETRYABLE as exc:
                 last_exc = exc
                 if attempt <= max_retries:
@@ -310,7 +321,7 @@ def _call_llm(task: str, system_prompt: str = "", timeout_override: float | None
     # --- Try primary model ---
     t_start = _now_ms()
     try:
-        output, latency, attempts = _try_model(primary_model)
+        output, latency, attempts, prompt_tokens, completion_tokens = _try_model(primary_model)
         return {
             "output": output,
             "latency_ms": latency,
@@ -318,6 +329,8 @@ def _call_llm(task: str, system_prompt: str = "", timeout_override: float | None
             "model_used": primary_model,
             "attempts": attempts,
             "events": events,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
         }
     except Exception as exc1:
         logger.warning("[llm] primary model '%s' failed after retries: %s", primary_model, exc1)
@@ -329,7 +342,7 @@ def _call_llm(task: str, system_prompt: str = "", timeout_override: float | None
 
     # --- L3: try fallback model ---
     try:
-        output, latency, attempts = _try_model(fallback_model)
+        output, latency, attempts, prompt_tokens, completion_tokens = _try_model(fallback_model)
         return {
             "output": output,
             "latency_ms": latency,
@@ -337,6 +350,8 @@ def _call_llm(task: str, system_prompt: str = "", timeout_override: float | None
             "model_used": fallback_model,
             "attempts": total_attempts,
             "events": events,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
         }
     except Exception as exc2:
         logger.error("[llm] fallback model '%s' also failed: %s", fallback_model, exc2)
@@ -347,6 +362,8 @@ def _call_llm(task: str, system_prompt: str = "", timeout_override: float | None
             "model_used": "none",
             "attempts": total_attempts,
             "events": events,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
         }
 
 
@@ -428,33 +445,39 @@ def _keyword_route(task: str) -> str:
     return "research"
 
 
-def _llm_route(task: str) -> str:
+def _llm_route(task: str) -> tuple[str, int, int]:
     """Use LLM for intent classification; fall back to keyword on any failure.
 
     Audit keyword pre-check runs BEFORE the LLM call: if the task contains Solidity/
     contract signals, route immediately to audit without spending LLM tokens on routing.
     Uses a short timeout (LLM_ROUTE_TIMEOUT_S, default 8s) so routing failures
     degrade quickly to keyword fallback without blocking the main task LLM budget.
+
+    Returns (route, prompt_tokens, completion_tokens) — the router call also costs money,
+    so its usage is reported back to the caller for accumulation into the graph state.
+    Fast-path/keyword-fallback outcomes report (route, 0, 0) since no LLM call was made.
     """
     # Fast path: audit-specific keywords detected offline before calling LLM
     t = task.lower()
     if _is_audit_task(t):
-        return "audit"
+        return "audit", 0, 0
 
     route_timeout = _env_float("LLM_ROUTE_TIMEOUT_S", 8.0)
     try:
         res = _call_llm(task, system_prompt=_SYSTEM_PROMPT_ROUTER, timeout_override=route_timeout,
                         temperature=0)
     except Exception:
-        return _keyword_route(task)
+        return _keyword_route(task), 0, 0
+    prompt_tokens = res.get("prompt_tokens", 0)
+    completion_tokens = res.get("completion_tokens", 0)
     if not res["ok"]:
-        return _keyword_route(task)
+        return _keyword_route(task), prompt_tokens, completion_tokens
     label = res["output"].strip().lower().split()[0] if res["output"].strip() else ""
     if label in _ROUTE_LABELS:
-        return label
+        return label, prompt_tokens, completion_tokens
     # parse failed - use keyword fallback
     logger.debug("[router] LLM returned unexpected label %r, using keyword fallback", label)
-    return _keyword_route(task)
+    return _keyword_route(task), prompt_tokens, completion_tokens
 
 
 # ---------------------------------------------------------------------------
@@ -510,6 +533,8 @@ def _run_worker(state: AgentState, role: str) -> AgentState:
         "output": output,
         "trace": trace,
         "llm_ok": res["ok"],
+        "prompt_tokens": state.get("prompt_tokens", 0) + res.get("prompt_tokens", 0),
+        "completion_tokens": state.get("completion_tokens", 0) + res.get("completion_tokens", 0),
     }
 
 
@@ -524,14 +549,21 @@ def supervisor_node(state: AgentState) -> AgentState:
 
     api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
     if api_key:
-        route = _llm_route(task)
+        route, prompt_tokens, completion_tokens = _llm_route(task)
     else:
         route = _keyword_route(task)
+        prompt_tokens, completion_tokens = 0, 0
 
     latency = _now_ms() - t0
     summary = f"[control] routed -> {route}"
     new_trace = state["trace"] + [_make_trace("supervisor", "control", summary, latency)]
-    return {**state, "route": route, "trace": new_trace}
+    return {
+        **state,
+        "route": route,
+        "trace": new_trace,
+        "prompt_tokens": state.get("prompt_tokens", 0) + prompt_tokens,
+        "completion_tokens": state.get("completion_tokens", 0) + completion_tokens,
+    }
 
 
 def research_node(state: AgentState) -> AgentState:
@@ -638,6 +670,8 @@ def reflect_node(state: AgentState) -> AgentState:
     trace = list(state["trace"])
 
     api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+    prompt_tokens = 0
+    completion_tokens = 0
 
     if not api_key:
         # offline: always PASS, never loop
@@ -659,6 +693,8 @@ def reflect_node(state: AgentState) -> AgentState:
         reflect_timeout = _env_float("LLM_REFLECT_TIMEOUT_S", 10.0)
         res = _call_llm(reflect_task, system_prompt=reflect_system, timeout_override=reflect_timeout,
                         temperature=0)
+        prompt_tokens = res.get("prompt_tokens", 0)
+        completion_tokens = res.get("completion_tokens", 0)
 
         if not res["ok"]:
             # LLM failed during reflect: conservatively PASS (don't add loop overhead)
@@ -678,7 +714,14 @@ def reflect_node(state: AgentState) -> AgentState:
     trace.append(_make_trace("reflect", "control", summary, latency))
     new_loop = loop_count + (1 if verdict == "RETRY" else 0)
 
-    return {**state, "trace": trace, "loop_count": new_loop, "route": state.get("route", "research")}
+    return {
+        **state,
+        "trace": trace,
+        "loop_count": new_loop,
+        "route": state.get("route", "research"),
+        "prompt_tokens": state.get("prompt_tokens", 0) + prompt_tokens,
+        "completion_tokens": state.get("completion_tokens", 0) + completion_tokens,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -764,7 +807,9 @@ def get_graph() -> Any:
 def run_graph(task: str) -> dict:
     """
     Run the graph for a task.
-    Returns dict with keys: output, trace (list of dicts), status ("OK" or "FAILED").
+    Returns dict with keys: output, trace (list of dicts), status ("OK" or "FAILED"),
+    route, prompt_tokens, completion_tokens (cumulative usage across all LLM calls
+    in the graph run: router + worker(s) + reflect; 0/0 in offline mode).
     """
     graph = get_graph()
     initial: AgentState = {
@@ -774,6 +819,8 @@ def run_graph(task: str) -> dict:
         "trace": [],
         "llm_ok": False,
         "loop_count": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
     }
     result = graph.invoke(initial)
     status = "OK" if result.get("llm_ok") else "FAILED"
@@ -782,6 +829,8 @@ def run_graph(task: str) -> dict:
         "trace": result["trace"],
         "status": status,
         "route": result.get("route", ""),
+        "prompt_tokens": result.get("prompt_tokens", 0),
+        "completion_tokens": result.get("completion_tokens", 0),
     }
 
 
@@ -817,9 +866,11 @@ def _run_graph_stream_inner(task: str, trace_id: str):
     # --- 1. Route (same logic as supervisor_node) ---
     t0 = _now_ms()
     api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+    router_prompt_tokens = 0
+    router_completion_tokens = 0
     try:
         if api_key:
-            route = _llm_route(task)
+            route, router_prompt_tokens, router_completion_tokens = _llm_route(task)
         else:
             route = _keyword_route(task)
     except Exception as exc:
@@ -840,6 +891,8 @@ def _run_graph_stream_inner(task: str, trace_id: str):
     full_output = ""
     llm_ok = False
     worker_latency_ms = 0
+    worker_prompt_tokens = 0
+    worker_completion_tokens = 0
 
     if route == "audit":
         # Audit is a one-shot tool call; degrade to single-chunk in stream mode
@@ -895,12 +948,14 @@ def _run_graph_stream_inner(task: str, trace_id: str):
             else:
                 # Online: DeepSeek streaming with L3 fallback on pre-first-token error
                 # Use a collector list to get return values from the sub-generator
-                collector: list[dict] = []  # will hold {"output":..., "ok":...}
+                collector: list[dict] = []  # will hold {"output":..., "ok":..., "prompt_tokens":..., "completion_tokens":...}
                 for ev in _stream_llm(task, system_prompt, route, collector):
                     yield ev
                 if collector:
                     full_output = collector[0].get("output", "")
                     llm_ok = collector[0].get("ok", False)
+                    worker_prompt_tokens = collector[0].get("prompt_tokens", 0)
+                    worker_completion_tokens = collector[0].get("completion_tokens", 0)
                 else:
                     llm_ok = False
 
@@ -926,6 +981,8 @@ def _run_graph_stream_inner(task: str, trace_id: str):
         "route": route,
         "status": status,
         "trace": trace,
+        "prompt_tokens": router_prompt_tokens + worker_prompt_tokens,
+        "completion_tokens": router_completion_tokens + worker_completion_tokens,
     }
 
 
@@ -934,8 +991,14 @@ def _stream_llm(task: str, system_prompt: str, node_name: str, collector: list):
     Inner generator: streams tokens from DeepSeek with L3 fallback.
 
     Yields {"type":"token", "node":node_name, "content":delta} events.
-    Appends {"output": str, "ok": bool} to collector when done so caller can
-    read the final result (generators can't easily return values to for-loop callers).
+    Appends {"output": str, "ok": bool, "prompt_tokens": int, "completion_tokens": int}
+    to collector when done so caller can read the final result (generators can't
+    easily return values to for-loop callers).
+
+    Usage: requests stream_options={"include_usage": True} (DeepSeek is OpenAI-compatible;
+    the final chunk then carries a non-empty `usage`). If the backend/SDK rejects that
+    param, the create() call is retried without it and usage falls back to
+    prompt_tokens=0, completion_tokens=<number of token events> (best-effort estimate).
 
     L3 fallback: if the primary model raises BEFORE the first token is seen,
     switch to DEEPSEEK_FALLBACK_MODEL and retry. If failure happens after the
@@ -957,33 +1020,71 @@ def _stream_llm(task: str, system_prompt: str, node_name: str, collector: list):
 
     full_output = ""
     first_token_seen = False
+    token_event_count = 0
+    prompt_tokens = 0
+    completion_tokens = 0
+    usage_captured = False
 
     def _do_stream(model: str):
-        """Actually call the API and yield token dicts; mutates full_output/first_token_seen."""
-        nonlocal full_output, first_token_seen
-        stream = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            stream=True,
-            timeout=timeout_s,
-        )
+        """Actually call the API and yield token dicts; mutates the usage/output nonlocals."""
+        nonlocal full_output, first_token_seen, token_event_count
+        nonlocal prompt_tokens, completion_tokens, usage_captured
+        try:
+            stream = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                stream=True,
+                timeout=timeout_s,
+                stream_options={"include_usage": True},
+            )
+        except Exception as exc:
+            logger.debug(
+                "[stream] stream_options include_usage rejected (%s), retrying without it "
+                "(usage will fall back to token-count)", exc,
+            )
+            stream = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                stream=True,
+                timeout=timeout_s,
+            )
         for chunk in stream:
             delta = chunk.choices[0].delta.content if chunk.choices else None
             if delta:
                 first_token_seen = True
                 full_output += delta
+                token_event_count += 1
                 yield {"type": "token", "node": node_name, "content": delta}
+            usage = getattr(chunk, "usage", None)
+            if usage is not None:
+                prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+                completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+                usage_captured = True
+
+    def _finalize_usage():
+        """Fall back to token-event-count usage if a real usage chunk was never seen."""
+        nonlocal completion_tokens
+        if not usage_captured:
+            completion_tokens = token_event_count
 
     # Try primary model
     try:
         yield from _do_stream(primary_model)
-        collector.append({"output": full_output, "ok": True})
+        _finalize_usage()
+        collector.append({
+            "output": full_output, "ok": True,
+            "prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens,
+        })
         return
     except Exception as exc1:
         if first_token_seen:
             # Mid-stream failure: can't cleanly retry
             logger.error("[stream] primary model failed mid-stream: %s", exc1)
-            collector.append({"output": full_output, "ok": False})
+            _finalize_usage()
+            collector.append({
+                "output": full_output, "ok": False,
+                "prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens,
+            })
             return
         else:
             # Pre-first-token: L3 switch to fallback
@@ -995,12 +1096,20 @@ def _stream_llm(task: str, system_prompt: str, node_name: str, collector: list):
     # L3: try fallback model
     try:
         yield from _do_stream(fallback_model)
-        collector.append({"output": full_output, "ok": True})
+        _finalize_usage()
+        collector.append({
+            "output": full_output, "ok": True,
+            "prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens,
+        })
     except Exception as exc2:
         logger.error("[stream] fallback model also failed: %s", exc2)
         err_text = f"[error] all models failed: {exc2}"
         full_output = full_output + err_text if full_output else err_text
-        collector.append({"output": full_output, "ok": False})
+        _finalize_usage()
+        collector.append({
+            "output": full_output, "ok": False,
+            "prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens,
+        })
 
 
 def _extract_solidity_source(task: str) -> str:
