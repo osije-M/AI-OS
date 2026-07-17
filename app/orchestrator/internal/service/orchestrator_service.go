@@ -17,6 +17,7 @@ import (
 	"github.com/osije/ai-os/app/orchestrator/internal/conf"
 	"github.com/osije/ai-os/app/orchestrator/internal/metrics"
 	"github.com/osije/ai-os/app/orchestrator/internal/policy"
+	"github.com/osije/ai-os/app/orchestrator/internal/runs"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -32,10 +33,16 @@ type OrchestratorServiceImpl struct {
 	traceStoreAddr string
 	policyEngine   *policy.Engine
 	metrics        *metrics.Metrics // M6-C②，可为 nil（如测试里裸构造），埋点处判空
+	runs           *runs.Registry   // M7-2 live 运行注册表（单写者=本服务）
 }
 
 func NewOrchestratorServiceImpl(cfg *conf.Config, m *metrics.Metrics) *OrchestratorServiceImpl {
 	engine, _ := policy.Load(cfg.PolicyFile) // Load 失败已降级，不会 panic
+	gaugeHook := func(active int) {
+		if m != nil {
+			m.ActiveRuns.Set(float64(active))
+		}
+	}
 	return &OrchestratorServiceImpl{
 		agentAddr:      cfg.AgentRuntimeAddr,
 		maxRetries:     cfg.MaxRetries,
@@ -43,6 +50,45 @@ func NewOrchestratorServiceImpl(cfg *conf.Config, m *metrics.Metrics) *Orchestra
 		traceStoreAddr: cfg.TraceStoreAddr,
 		policyEngine:   engine,
 		metrics:        m,
+		runs:           runs.New(0, 0, gaugeHook), // 默认 TTL 5min / 上限 1000
+	}
+}
+
+// mapReplyState 把 agent 的字符串 status 映射到 RunState 终态。
+func mapReplyState(status string) orchestratorv1.RunState {
+	if status == "OK" {
+		return orchestratorv1.RunState_RUN_STATE_DONE
+	}
+	return orchestratorv1.RunState_RUN_STATE_FAILED
+}
+
+// ListRuns 返回 live 注册表快照（M7-2）。
+func (s *OrchestratorServiceImpl) ListRuns(_ context.Context, _ *orchestratorv1.ListRunsRequest) (*orchestratorv1.ListRunsReply, error) {
+	if s.runs == nil {
+		return &orchestratorv1.ListRunsReply{}, nil
+	}
+	return &orchestratorv1.ListRunsReply{Runs: s.runs.List()}, nil
+}
+
+// captureStart 向 TraceStore 写入 run 开始记录（Status=RUNNING，最佳努力；
+// 结束时 captureTrace 的完整 trace 借 Save 的 upsert 覆盖它）。
+func (s *OrchestratorServiceImpl) captureStart(traceID, task string, startedAt int64) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, err := grpc.NewClient(s.traceStoreAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Printf("[orchestrator] start capture dial error: %v", err)
+		return
+	}
+	defer conn.Close()
+	t := &tracev1.Trace{
+		TraceId:   traceID,
+		Task:      task,
+		Status:    "RUNNING",
+		StartedAt: startedAt,
+	}
+	if _, saveErr := tracev1.NewTraceStoreClient(conn).Save(ctx, &tracev1.SaveRequest{Trace: t}); saveErr != nil {
+		log.Printf("[orchestrator] start capture save error: %v", saveErr)
 	}
 }
 
@@ -218,10 +264,15 @@ func (s *OrchestratorServiceImpl) RunTask(ctx context.Context, req *orchestrator
 		log.Printf("[orchestrator] policy TRANSFORM trace=%s reason=%s", traceID, decision.Reason)
 	}
 
+	// M7-2：进入执行即登记（deny 不入注册表）+ durable 开始记录（best-effort）
+	s.runs.Register(traceID, req.Task)
+	go s.captureStart(traceID, req.Task, startedAt)
+
 	conn, err := grpc.NewClient(s.agentAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Printf("[orchestrator] failed to dial agent runtime %s: %v", s.agentAddr, err)
 		s.recordRequest("", "FAILED", time.Now().UnixMilli()-startedAt)
+		s.runs.Finish(traceID, orchestratorv1.RunState_RUN_STATE_FAILED, "")
 		return &orchestratorv1.RunTaskReply{
 			TraceId: traceID,
 			Status:  "FAILED",
@@ -263,6 +314,7 @@ func (s *OrchestratorServiceImpl) RunTask(ctx context.Context, req *orchestrator
 	if err != nil {
 		log.Printf("[orchestrator] RunGraph final error after %d attempt(s): %v", s.maxRetries+1, err)
 		s.recordRequest("", "FAILED", endedAt-startedAt)
+		s.runs.Finish(traceID, orchestratorv1.RunState_RUN_STATE_FAILED, "")
 		return &orchestratorv1.RunTaskReply{
 			TraceId: traceID,
 			Status:  "FAILED",
@@ -280,6 +332,7 @@ func (s *OrchestratorServiceImpl) RunTask(ctx context.Context, req *orchestrator
 
 	s.recordRequest(reply.Route, reply.Status, endedAt-startedAt)
 	s.recordUsage(reply.Route, reply.PromptTokens, reply.CompletionTokens)
+	s.runs.Finish(traceID, mapReplyState(reply.Status), reply.Route)
 
 	return &orchestratorv1.RunTaskReply{
 		TraceId:          reply.TraceId,
@@ -338,6 +391,13 @@ func (s *OrchestratorServiceImpl) RunTaskStream(req *orchestratorv1.RunTaskReque
 		agent = "supervisor"
 	}
 
+	// M7-2：进入执行即登记 + durable 开始记录（best-effort）
+	s.runs.Register(traceID, task)
+	go s.captureStart(traceID, task, startedAt)
+	// 兜底:任何提前 return(下游 sendErr、recv 异常)都保证离开 RUNNING;
+	// 正常路径先 Finish(DONE/FAILED),此 defer 因终态幂等而无操作。
+	defer s.runs.Finish(traceID, orchestratorv1.RunState_RUN_STATE_FAILED, "")
+
 	conn, err := grpc.NewClient(s.agentAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Printf("[orchestrator] stream failed to dial agent runtime %s: %v", s.agentAddr, err)
@@ -347,6 +407,7 @@ func (s *OrchestratorServiceImpl) RunTaskStream(req *orchestratorv1.RunTaskReque
 			Content: fmt.Sprintf("failed to connect to agent runtime: %v", err),
 		})
 		s.recordRequest("", "FAILED", time.Now().UnixMilli()-startedAt)
+		s.runs.Finish(traceID, orchestratorv1.RunState_RUN_STATE_FAILED, "")
 		return nil
 	}
 	defer conn.Close()
@@ -366,6 +427,7 @@ func (s *OrchestratorServiceImpl) RunTaskStream(req *orchestratorv1.RunTaskReque
 			Content: fmt.Sprintf("agent stream error: %v", err),
 		})
 		s.recordRequest("", "FAILED", time.Now().UnixMilli()-startedAt)
+		s.runs.Finish(traceID, orchestratorv1.RunState_RUN_STATE_FAILED, "")
 		return nil
 	}
 
@@ -391,6 +453,7 @@ func (s *OrchestratorServiceImpl) RunTaskStream(req *orchestratorv1.RunTaskReque
 
 		switch ev.Type {
 		case "token":
+			s.runs.Touch(traceID) // 带内心跳
 			fullOutput += ev.Content
 			if sendErr := stream.Send(&orchestratorv1.StreamEvent{
 				Type:    ev.Type,
@@ -401,6 +464,7 @@ func (s *OrchestratorServiceImpl) RunTaskStream(req *orchestratorv1.RunTaskReque
 				return sendErr
 			}
 		case "node":
+			s.runs.MarkNode(traceID, ev.Node) // 当前节点 + 带内心跳
 			if sendErr := stream.Send(&orchestratorv1.StreamEvent{
 				Type:    ev.Type,
 				TraceId: traceID,
@@ -453,6 +517,7 @@ func (s *OrchestratorServiceImpl) RunTaskStream(req *orchestratorv1.RunTaskReque
 
 			s.recordRequest(route, agentStatus, endedAt-startedAt)
 			s.recordUsage(route, promptTokens, completionTokens)
+			s.runs.Finish(traceID, mapReplyState(agentStatus), route)
 
 			// Best-effort capture trace
 			syntheticReply := &agentv1.RunGraphReply{

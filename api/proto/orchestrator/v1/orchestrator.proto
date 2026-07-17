@@ -11,6 +11,40 @@ service Orchestrator {
   rpc RunTask(RunTaskRequest) returns (RunTaskReply);
   // 流式：转发 AgentRuntime 的逐 token 输出（先过 Policy）。
   rpc RunTaskStream(RunTaskRequest) returns (stream StreamEvent);
+  // M7-2：live 运行注册表查询（运行中/近期终态的 run 列表，内存态、单实例）。
+  rpc ListRuns(ListRunsRequest) returns (ListRunsReply);
+}
+
+// M7-2 run 生命周期状态（live 视图用；TraceStore 的 durable Status 维持字符串）。
+// 终态单调不可逆；CANCELLED 由 M7-3 取消控制使用，BUDGET_EXCEEDED 由 M8 预算熔断使用，
+// ORPHANED 是 durable 读时判定（RUNNING 超龄），不由注册表产生。
+enum RunState {
+  RUN_STATE_UNSPECIFIED = 0;
+  RUN_STATE_RUNNING = 1;
+  RUN_STATE_DONE = 2;
+  RUN_STATE_FAILED = 3;
+  RUN_STATE_DENIED = 4;
+  RUN_STATE_CANCELLED = 5;
+  RUN_STATE_ORPHANED = 6;
+  RUN_STATE_BUDGET_EXCEEDED = 7;
+}
+
+// M7-2 单个 run 的 live 快照。
+message RunInfo {
+  string trace_id = 1;
+  string task_preview = 2;      // 任务文本截断（80 字符）
+  string route = 3;             // 路由确定后填充（unary 在 done 时，stream 随事件）
+  RunState state = 4;
+  string current_node = 5;      // 流式路径随 node 事件刷新；unary 粗粒度为空
+  int64 started_at_ms = 6;      // orchestrator 本地时钟
+  int64 last_event_at_ms = 7;   // 带内心跳：最近一次事件时间
+  int64 elapsed_ms = 8;         // 运行中=now-started；终态=完成耗时
+}
+
+message ListRunsRequest {}
+
+message ListRunsReply {
+  repeated RunInfo runs = 1;
 }
 
 // 流式事件（与 agent.v1.StreamEvent 同形，orchestrator 转发时映射）。

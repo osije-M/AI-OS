@@ -29,6 +29,7 @@ type Metrics struct {
 	PolicyDenials   prometheus.Counter       // aios_policy_denials_total
 	LLMTokensTotal  *prometheus.CounterVec   // aios_llm_tokens_total{route,kind="prompt"|"completion"}
 	LLMCostUSDTotal *prometheus.CounterVec   // aios_llm_cost_usd_total{route}
+	ActiveRuns      prometheus.Gauge         // aios_active_runs（M7-2 live 注册表 RUNNING 数）
 
 	promptPriceUSDPer1M     float64
 	completionPriceUSDPer1M float64
@@ -77,6 +78,10 @@ func New() *Metrics {
 			Name: "aios_llm_cost_usd_total",
 			Help: "Estimated LLM cost in USD, labeled by route (price(env) * tokens; estimate, not billing-accurate).",
 		}, []string{"route"}),
+		ActiveRuns: factory.NewGauge(prometheus.GaugeOpts{
+			Name: "aios_active_runs",
+			Help: "Number of runs currently in RUNNING state in the live registry (M7-2).",
+		}),
 		promptPriceUSDPer1M:     envFloat("LLM_PRICE_PROMPT_USD_PER_1M", 0.27),
 		completionPriceUSDPer1M: envFloat("LLM_PRICE_COMPLETION_USD_PER_1M", 1.10),
 		registry:                reg,

@@ -856,13 +856,44 @@ def get_graph() -> Any:
     return _GRAPH
 
 
-def run_graph(task: str) -> dict:
+def _demo_delay_seconds(params: dict | None) -> float:
+    """M7-2 测试钩子:params.demo_delay_ms → 秒。
+
+    仅离线模式(无 DEEPSEEK_API_KEY)生效——它的唯一用途是让 CI/演示能在
+    /v1/runs 里抓到 RUNNING 状态;在线模式忽略并打警告(不污染真实请求语义)。
+    上限 30s 防手滑。非法值按 0 处理。
+    """
+    if not params:
+        return 0.0
+    raw = params.get("demo_delay_ms", "")
+    if not raw:
+        return 0.0
+    try:
+        ms = int(raw)
+    except (TypeError, ValueError):
+        logger.warning("[demo] invalid demo_delay_ms %r ignored", raw)
+        return 0.0
+    if ms <= 0:
+        return 0.0
+    if os.getenv("DEEPSEEK_API_KEY", "").strip():
+        logger.warning("[demo] demo_delay_ms ignored in online mode")
+        return 0.0
+    return min(ms, 30_000) / 1000.0
+
+
+def run_graph(task: str, params: dict | None = None) -> dict:
     """
     Run the graph for a task.
     Returns dict with keys: output, trace (list of dicts), status ("OK" or "FAILED"),
     route, prompt_tokens, completion_tokens (cumulative usage across all LLM calls
     in the graph run: router + worker(s) + reflect; 0/0 in offline mode).
+    params: 透传的请求参数(M7-2 仅识别测试钩子 demo_delay_ms,离线模式生效)。
     """
+    delay = _demo_delay_seconds(params)
+    if delay > 0:
+        logger.info("[demo] offline demo delay %.1fs (trace visibility hook)", delay)
+        time.sleep(delay)
+
     graph = get_graph()
     initial: AgentState = {
         "task": task,
@@ -890,7 +921,7 @@ def run_graph(task: str) -> dict:
 # Streaming path: run_graph_stream
 # ---------------------------------------------------------------------------
 
-def run_graph_stream(task: str, trace_id: str = ""):
+def run_graph_stream(task: str, trace_id: str = "", params: dict | None = None):
     """
     Generator: streaming version of run_graph.
 
@@ -905,13 +936,13 @@ def run_graph_stream(task: str, trace_id: str = ""):
       {"type":"error", "content":"<err>"}
     """
     try:
-        yield from _run_graph_stream_inner(task, trace_id)
+        yield from _run_graph_stream_inner(task, trace_id, params)
     except Exception as exc:
         logger.exception("[stream] unexpected generator error: %s", exc)
         yield {"type": "error", "content": f"internal generator error: {exc}"}
 
 
-def _run_graph_stream_inner(task: str, trace_id: str):
+def _run_graph_stream_inner(task: str, trace_id: str, params: dict | None = None):
     """Inner generator - wrapped by run_graph_stream for top-level exception safety."""
     trace: list[dict] = []
 
@@ -990,6 +1021,10 @@ def _run_graph_stream_inner(task: str, trace_id: str):
         try:
             if not api_key:
                 # Offline mode: yield task echo in small chunks to simulate streaming
+                delay = _demo_delay_seconds(params)
+                if delay > 0:
+                    logger.info("[demo] offline stream demo delay %.1fs", delay)
+                    time.sleep(delay)
                 offline_text = f"[offline] echo: {task}"
                 chunk_size = 4
                 for i in range(0, len(offline_text), chunk_size):

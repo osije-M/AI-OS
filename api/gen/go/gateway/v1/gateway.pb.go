@@ -31,6 +31,7 @@ type RunRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Task          string                 `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
 	Agent         string                 `protobuf:"bytes,2,opt,name=agent,proto3" json:"agent,omitempty"`
+	Params        map[string]string      `protobuf:"bytes,3,rep,name=params,proto3" json:"params,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // M7-2 透传到 orchestrator/agent（如测试钩子 demo_delay_ms）
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -77,6 +78,13 @@ func (x *RunRequest) GetAgent() string {
 		return x.Agent
 	}
 	return ""
+}
+
+func (x *RunRequest) GetParams() map[string]string {
+	if x != nil {
+		return x.Params
+	}
+	return nil
 }
 
 type RunReply struct {
@@ -159,11 +167,15 @@ var File_gateway_v1_gateway_proto protoreflect.FileDescriptor
 
 const file_gateway_v1_gateway_proto_rawDesc = "" +
 	"\n" +
-	"\x18gateway/v1/gateway.proto\x12\x0faios.gateway.v1\x1a\x1cgoogle/api/annotations.proto\"6\n" +
+	"\x18gateway/v1/gateway.proto\x12\x0faios.gateway.v1\x1a\x1cgoogle/api/annotations.proto\"\xb2\x01\n" +
 	"\n" +
 	"RunRequest\x12\x12\n" +
 	"\x04task\x18\x01 \x01(\tR\x04task\x12\x14\n" +
-	"\x05agent\x18\x02 \x01(\tR\x05agent\"\xa7\x01\n" +
+	"\x05agent\x18\x02 \x01(\tR\x05agent\x12?\n" +
+	"\x06params\x18\x03 \x03(\v2'.aios.gateway.v1.RunRequest.ParamsEntryR\x06params\x1a9\n" +
+	"\vParamsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa7\x01\n" +
 	"\bRunReply\x12\x19\n" +
 	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12\x16\n" +
 	"\x06output\x18\x02 \x01(\tR\x06output\x12\x16\n" +
@@ -185,19 +197,21 @@ func file_gateway_v1_gateway_proto_rawDescGZIP() []byte {
 	return file_gateway_v1_gateway_proto_rawDescData
 }
 
-var file_gateway_v1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_gateway_v1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_gateway_v1_gateway_proto_goTypes = []any{
 	(*RunRequest)(nil), // 0: aios.gateway.v1.RunRequest
 	(*RunReply)(nil),   // 1: aios.gateway.v1.RunReply
+	nil,                // 2: aios.gateway.v1.RunRequest.ParamsEntry
 }
 var file_gateway_v1_gateway_proto_depIdxs = []int32{
-	0, // 0: aios.gateway.v1.Gateway.Run:input_type -> aios.gateway.v1.RunRequest
-	1, // 1: aios.gateway.v1.Gateway.Run:output_type -> aios.gateway.v1.RunReply
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	2, // 0: aios.gateway.v1.RunRequest.params:type_name -> aios.gateway.v1.RunRequest.ParamsEntry
+	0, // 1: aios.gateway.v1.Gateway.Run:input_type -> aios.gateway.v1.RunRequest
+	1, // 2: aios.gateway.v1.Gateway.Run:output_type -> aios.gateway.v1.RunReply
+	2, // [2:3] is the sub-list for method output_type
+	1, // [1:2] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_gateway_v1_gateway_proto_init() }
@@ -211,7 +225,7 @@ func file_gateway_v1_gateway_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gateway_v1_gateway_proto_rawDesc), len(file_gateway_v1_gateway_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

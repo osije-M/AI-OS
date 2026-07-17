@@ -61,8 +61,9 @@ func (g *GatewayServiceImpl) Run(ctx context.Context, req *gatewayv1.RunRequest)
 	defer conn.Close()
 
 	reply, err := client.RunTask(ctx, &orchestratorv1.RunTaskRequest{
-		Task:  req.Task,
-		Agent: req.Agent,
+		Task:   req.Task,
+		Agent:  req.Agent,
+		Params: req.Params, // M7-2 透传（如测试钩子 demo_delay_ms）
 	})
 	if err != nil {
 		return &gatewayv1.RunReply{Status: "FAILED", Output: err.Error()}, nil
@@ -132,14 +133,41 @@ func (g *GatewayServiceImpl) HandleListTraces(ctx khttp.Context) error {
 	return nil
 }
 
+// HandleListRuns handles GET /v1/runs — M7-2 live 运行注册表查询（代理 orchestrator.ListRuns）。
+func (g *GatewayServiceImpl) HandleListRuns(ctx khttp.Context) error {
+	conn, client, err := g.dialOrchestrator()
+	if err != nil {
+		return ctx.JSON(502, map[string]string{"error": err.Error()})
+	}
+	defer conn.Close()
+	rCtx, cancel := context.WithTimeout(ctx.Request().Context(), 5*time.Second)
+	defer cancel()
+	reply, err := client.ListRuns(rCtx, &orchestratorv1.ListRunsRequest{})
+	if err != nil {
+		return ctx.JSON(502, map[string]string{"error": err.Error()})
+	}
+	marshaler := protojson.MarshalOptions{EmitUnpopulated: true}
+	parts := make([]json.RawMessage, 0, len(reply.Runs))
+	for _, r := range reply.Runs {
+		b, _ := marshaler.Marshal(r)
+		parts = append(parts, json.RawMessage(b))
+	}
+	out, _ := json.Marshal(map[string]interface{}{"runs": parts})
+	ctx.Response().Header().Set("Content-Type", "application/json")
+	ctx.Response().WriteHeader(200)
+	ctx.Response().Write(out)
+	return nil
+}
+
 // HandleRunStream handles POST /v1/run/stream — SSE streaming endpoint.
 // Parses {task, agent} from body, calls orchestrator.RunTaskStream, and writes
 // Server-Sent Events with flush after every event.
 func (g *GatewayServiceImpl) HandleRunStream(ctx khttp.Context) error {
 	// Parse request body
 	var body struct {
-		Task  string `json:"task"`
-		Agent string `json:"agent"`
+		Task   string            `json:"task"`
+		Agent  string            `json:"agent"`
+		Params map[string]string `json:"params"` // M7-2 透传
 	}
 	if err := json.NewDecoder(ctx.Request().Body).Decode(&body); err != nil {
 		return ctx.JSON(400, map[string]string{"error": "invalid request body: " + err.Error()})
@@ -177,8 +205,9 @@ func (g *GatewayServiceImpl) HandleRunStream(ctx khttp.Context) error {
 	defer conn.Close()
 
 	orchStream, err := orcClient.RunTaskStream(ctx.Request().Context(), &orchestratorv1.RunTaskRequest{
-		Task:  body.Task,
-		Agent: body.Agent,
+		Task:   body.Task,
+		Agent:  body.Agent,
+		Params: body.Params, // M7-2 透传
 	})
 	if err != nil {
 		errData, _ := json.Marshal(map[string]string{"type": "error", "content": err.Error()})

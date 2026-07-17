@@ -76,6 +76,8 @@ func runTask(client *http.Client, base, apiKey string, t Task) Result {
 // fetchRoute 从 trace 取路由（/v1/run 响应不含 route,需查 trace）。
 // orchestrator 的 trace 落库是异步最佳努力的,故这里有界轮询:等 trace 出现再读,
 // 避免"发完即查"的竞态导致 route 恒空。
+// M7-2 起 orchestrator 会在 run 开始时先写一条 Status=RUNNING 的开始记录(route 为空),
+// 所以"trace 存在"不再等于"已终态"——RUNNING 视为未就绪,继续轮询等终态覆盖。
 func fetchRoute(client *http.Client, base, apiKey, traceID string) string {
 	if traceID == "" {
 		return ""
@@ -94,8 +96,8 @@ func fetchRoute(client *http.Client, base, apiKey, traceID string) string {
 				_ = json.NewDecoder(resp.Body).Decode(&tr)
 			}
 			resp.Body.Close()
-			if found {
-				return tr.Route // trace 已落库(route 可能为空,如 deny)
+			if found && tr.Status != "RUNNING" {
+				return tr.Route // trace 已终态(route 可能为空,如 deny)
 			}
 		}
 		time.Sleep(200 * time.Millisecond)

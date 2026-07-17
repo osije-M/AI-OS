@@ -45,6 +45,21 @@ jobs:
           go-version: "1.24"
       - name: Run offline eval suite (strict gate)
         run: go run ./cmd/evalctl -suite eval/suite-offline.yaml -db /tmp/eval-ci.db -strict
+      - name: State visibility check (M7-2)
+        run: |
+          set -euo pipefail
+          curl -s -X POST http://127.0.0.1:8000/v1/run -H 'Content-Type: application/json' \
+            -d '{"task":"slow demo for state visibility","params":{"demo_delay_ms":"8000"}}' > /tmp/run.json &
+          RUN_PID=$!
+          sleep 3
+          runs=$(curl -s http://127.0.0.1:8000/v1/runs)
+          echo "live runs mid-flight: $runs"
+          echo "$runs" | grep -q 'RUN_STATE_RUNNING' || { echo "FAIL: expected RUNNING in /v1/runs"; exit 1; }
+          wait $RUN_PID
+          cat /tmp/run.json
+          grep -q '"status":"OK"' /tmp/run.json || { echo "FAIL: slow run did not finish OK"; exit 1; }
+          runs_after=$(curl -s http://127.0.0.1:8000/v1/runs)
+          echo "$runs_after" | grep -q 'RUN_STATE_DONE' || { echo "FAIL: expected DONE in /v1/runs after finish"; exit 1; }
       - name: Dump compose logs on failure
         if: failure()
         run: docker compose logs

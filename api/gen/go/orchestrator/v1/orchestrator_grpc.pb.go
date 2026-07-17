@@ -25,6 +25,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	Orchestrator_RunTask_FullMethodName       = "/aios.orchestrator.v1.Orchestrator/RunTask"
 	Orchestrator_RunTaskStream_FullMethodName = "/aios.orchestrator.v1.Orchestrator/RunTaskStream"
+	Orchestrator_ListRuns_FullMethodName      = "/aios.orchestrator.v1.Orchestrator/ListRuns"
 )
 
 // OrchestratorClient is the client API for Orchestrator service.
@@ -34,6 +35,8 @@ type OrchestratorClient interface {
 	RunTask(ctx context.Context, in *RunTaskRequest, opts ...grpc.CallOption) (*RunTaskReply, error)
 	// 流式：转发 AgentRuntime 的逐 token 输出（先过 Policy）。
 	RunTaskStream(ctx context.Context, in *RunTaskRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamEvent], error)
+	// M7-2：live 运行注册表查询（运行中/近期终态的 run 列表，内存态、单实例）。
+	ListRuns(ctx context.Context, in *ListRunsRequest, opts ...grpc.CallOption) (*ListRunsReply, error)
 }
 
 type orchestratorClient struct {
@@ -73,6 +76,16 @@ func (c *orchestratorClient) RunTaskStream(ctx context.Context, in *RunTaskReque
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Orchestrator_RunTaskStreamClient = grpc.ServerStreamingClient[StreamEvent]
 
+func (c *orchestratorClient) ListRuns(ctx context.Context, in *ListRunsRequest, opts ...grpc.CallOption) (*ListRunsReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListRunsReply)
+	err := c.cc.Invoke(ctx, Orchestrator_ListRuns_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OrchestratorServer is the server API for Orchestrator service.
 // All implementations must embed UnimplementedOrchestratorServer
 // for forward compatibility.
@@ -80,6 +93,8 @@ type OrchestratorServer interface {
 	RunTask(context.Context, *RunTaskRequest) (*RunTaskReply, error)
 	// 流式：转发 AgentRuntime 的逐 token 输出（先过 Policy）。
 	RunTaskStream(*RunTaskRequest, grpc.ServerStreamingServer[StreamEvent]) error
+	// M7-2：live 运行注册表查询（运行中/近期终态的 run 列表，内存态、单实例）。
+	ListRuns(context.Context, *ListRunsRequest) (*ListRunsReply, error)
 	mustEmbedUnimplementedOrchestratorServer()
 }
 
@@ -95,6 +110,9 @@ func (UnimplementedOrchestratorServer) RunTask(context.Context, *RunTaskRequest)
 }
 func (UnimplementedOrchestratorServer) RunTaskStream(*RunTaskRequest, grpc.ServerStreamingServer[StreamEvent]) error {
 	return status.Error(codes.Unimplemented, "method RunTaskStream not implemented")
+}
+func (UnimplementedOrchestratorServer) ListRuns(context.Context, *ListRunsRequest) (*ListRunsReply, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListRuns not implemented")
 }
 func (UnimplementedOrchestratorServer) mustEmbedUnimplementedOrchestratorServer() {}
 func (UnimplementedOrchestratorServer) testEmbeddedByValue()                      {}
@@ -146,6 +164,24 @@ func _Orchestrator_RunTaskStream_Handler(srv interface{}, stream grpc.ServerStre
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Orchestrator_RunTaskStreamServer = grpc.ServerStreamingServer[StreamEvent]
 
+func _Orchestrator_ListRuns_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListRunsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrchestratorServer).ListRuns(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Orchestrator_ListRuns_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrchestratorServer).ListRuns(ctx, req.(*ListRunsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Orchestrator_ServiceDesc is the grpc.ServiceDesc for Orchestrator service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -156,6 +192,10 @@ var Orchestrator_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RunTask",
 			Handler:    _Orchestrator_RunTask_Handler,
+		},
+		{
+			MethodName: "ListRuns",
+			Handler:    _Orchestrator_ListRuns_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

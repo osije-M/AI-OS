@@ -25,6 +25,254 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// M7-2 run 生命周期状态（live 视图用；TraceStore 的 durable Status 维持字符串）。
+// 终态单调不可逆；CANCELLED 由 M7-3 取消控制使用，BUDGET_EXCEEDED 由 M8 预算熔断使用，
+// ORPHANED 是 durable 读时判定（RUNNING 超龄），不由注册表产生。
+type RunState int32
+
+const (
+	RunState_RUN_STATE_UNSPECIFIED     RunState = 0
+	RunState_RUN_STATE_RUNNING         RunState = 1
+	RunState_RUN_STATE_DONE            RunState = 2
+	RunState_RUN_STATE_FAILED          RunState = 3
+	RunState_RUN_STATE_DENIED          RunState = 4
+	RunState_RUN_STATE_CANCELLED       RunState = 5
+	RunState_RUN_STATE_ORPHANED        RunState = 6
+	RunState_RUN_STATE_BUDGET_EXCEEDED RunState = 7
+)
+
+// Enum value maps for RunState.
+var (
+	RunState_name = map[int32]string{
+		0: "RUN_STATE_UNSPECIFIED",
+		1: "RUN_STATE_RUNNING",
+		2: "RUN_STATE_DONE",
+		3: "RUN_STATE_FAILED",
+		4: "RUN_STATE_DENIED",
+		5: "RUN_STATE_CANCELLED",
+		6: "RUN_STATE_ORPHANED",
+		7: "RUN_STATE_BUDGET_EXCEEDED",
+	}
+	RunState_value = map[string]int32{
+		"RUN_STATE_UNSPECIFIED":     0,
+		"RUN_STATE_RUNNING":         1,
+		"RUN_STATE_DONE":            2,
+		"RUN_STATE_FAILED":          3,
+		"RUN_STATE_DENIED":          4,
+		"RUN_STATE_CANCELLED":       5,
+		"RUN_STATE_ORPHANED":        6,
+		"RUN_STATE_BUDGET_EXCEEDED": 7,
+	}
+)
+
+func (x RunState) Enum() *RunState {
+	p := new(RunState)
+	*p = x
+	return p
+}
+
+func (x RunState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RunState) Descriptor() protoreflect.EnumDescriptor {
+	return file_orchestrator_v1_orchestrator_proto_enumTypes[0].Descriptor()
+}
+
+func (RunState) Type() protoreflect.EnumType {
+	return &file_orchestrator_v1_orchestrator_proto_enumTypes[0]
+}
+
+func (x RunState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RunState.Descriptor instead.
+func (RunState) EnumDescriptor() ([]byte, []int) {
+	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{0}
+}
+
+// M7-2 单个 run 的 live 快照。
+type RunInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TraceId       string                 `protobuf:"bytes,1,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
+	TaskPreview   string                 `protobuf:"bytes,2,opt,name=task_preview,json=taskPreview,proto3" json:"task_preview,omitempty"` // 任务文本截断（80 字符）
+	Route         string                 `protobuf:"bytes,3,opt,name=route,proto3" json:"route,omitempty"`                                // 路由确定后填充（unary 在 done 时，stream 随事件）
+	State         RunState               `protobuf:"varint,4,opt,name=state,proto3,enum=aios.orchestrator.v1.RunState" json:"state,omitempty"`
+	CurrentNode   string                 `protobuf:"bytes,5,opt,name=current_node,json=currentNode,proto3" json:"current_node,omitempty"`            // 流式路径随 node 事件刷新；unary 粗粒度为空
+	StartedAtMs   int64                  `protobuf:"varint,6,opt,name=started_at_ms,json=startedAtMs,proto3" json:"started_at_ms,omitempty"`         // orchestrator 本地时钟
+	LastEventAtMs int64                  `protobuf:"varint,7,opt,name=last_event_at_ms,json=lastEventAtMs,proto3" json:"last_event_at_ms,omitempty"` // 带内心跳：最近一次事件时间
+	ElapsedMs     int64                  `protobuf:"varint,8,opt,name=elapsed_ms,json=elapsedMs,proto3" json:"elapsed_ms,omitempty"`                 // 运行中=now-started；终态=完成耗时
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunInfo) Reset() {
+	*x = RunInfo{}
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunInfo) ProtoMessage() {}
+
+func (x *RunInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunInfo.ProtoReflect.Descriptor instead.
+func (*RunInfo) Descriptor() ([]byte, []int) {
+	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *RunInfo) GetTraceId() string {
+	if x != nil {
+		return x.TraceId
+	}
+	return ""
+}
+
+func (x *RunInfo) GetTaskPreview() string {
+	if x != nil {
+		return x.TaskPreview
+	}
+	return ""
+}
+
+func (x *RunInfo) GetRoute() string {
+	if x != nil {
+		return x.Route
+	}
+	return ""
+}
+
+func (x *RunInfo) GetState() RunState {
+	if x != nil {
+		return x.State
+	}
+	return RunState_RUN_STATE_UNSPECIFIED
+}
+
+func (x *RunInfo) GetCurrentNode() string {
+	if x != nil {
+		return x.CurrentNode
+	}
+	return ""
+}
+
+func (x *RunInfo) GetStartedAtMs() int64 {
+	if x != nil {
+		return x.StartedAtMs
+	}
+	return 0
+}
+
+func (x *RunInfo) GetLastEventAtMs() int64 {
+	if x != nil {
+		return x.LastEventAtMs
+	}
+	return 0
+}
+
+func (x *RunInfo) GetElapsedMs() int64 {
+	if x != nil {
+		return x.ElapsedMs
+	}
+	return 0
+}
+
+type ListRunsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRunsRequest) Reset() {
+	*x = ListRunsRequest{}
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRunsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRunsRequest) ProtoMessage() {}
+
+func (x *ListRunsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRunsRequest.ProtoReflect.Descriptor instead.
+func (*ListRunsRequest) Descriptor() ([]byte, []int) {
+	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{1}
+}
+
+type ListRunsReply struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Runs          []*RunInfo             `protobuf:"bytes,1,rep,name=runs,proto3" json:"runs,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRunsReply) Reset() {
+	*x = ListRunsReply{}
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRunsReply) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRunsReply) ProtoMessage() {}
+
+func (x *ListRunsReply) ProtoReflect() protoreflect.Message {
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRunsReply.ProtoReflect.Descriptor instead.
+func (*ListRunsReply) Descriptor() ([]byte, []int) {
+	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ListRunsReply) GetRuns() []*RunInfo {
+	if x != nil {
+		return x.Runs
+	}
+	return nil
+}
+
 // 流式事件（与 agent.v1.StreamEvent 同形，orchestrator 转发时映射）。
 type StreamEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -39,7 +287,7 @@ type StreamEvent struct {
 
 func (x *StreamEvent) Reset() {
 	*x = StreamEvent{}
-	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[0]
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -51,7 +299,7 @@ func (x *StreamEvent) String() string {
 func (*StreamEvent) ProtoMessage() {}
 
 func (x *StreamEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[0]
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -64,7 +312,7 @@ func (x *StreamEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamEvent.ProtoReflect.Descriptor instead.
 func (*StreamEvent) Descriptor() ([]byte, []int) {
-	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{0}
+	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *StreamEvent) GetType() string {
@@ -113,7 +361,7 @@ type RunTaskRequest struct {
 
 func (x *RunTaskRequest) Reset() {
 	*x = RunTaskRequest{}
-	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[1]
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -125,7 +373,7 @@ func (x *RunTaskRequest) String() string {
 func (*RunTaskRequest) ProtoMessage() {}
 
 func (x *RunTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[1]
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -138,7 +386,7 @@ func (x *RunTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunTaskRequest.ProtoReflect.Descriptor instead.
 func (*RunTaskRequest) Descriptor() ([]byte, []int) {
-	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{1}
+	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *RunTaskRequest) GetTask() string {
@@ -176,7 +424,7 @@ type RunTaskReply struct {
 
 func (x *RunTaskReply) Reset() {
 	*x = RunTaskReply{}
-	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[2]
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -188,7 +436,7 @@ func (x *RunTaskReply) String() string {
 func (*RunTaskReply) ProtoMessage() {}
 
 func (x *RunTaskReply) ProtoReflect() protoreflect.Message {
-	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[2]
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -201,7 +449,7 @@ func (x *RunTaskReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunTaskReply.ProtoReflect.Descriptor instead.
 func (*RunTaskReply) Descriptor() ([]byte, []int) {
-	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{2}
+	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *RunTaskReply) GetTraceId() string {
@@ -250,7 +498,20 @@ var File_orchestrator_v1_orchestrator_proto protoreflect.FileDescriptor
 
 const file_orchestrator_v1_orchestrator_proto_rawDesc = "" +
 	"\n" +
-	"\"orchestrator/v1/orchestrator.proto\x12\x14aios.orchestrator.v1\"\xa4\x01\n" +
+	"\"orchestrator/v1/orchestrator.proto\x12\x14aios.orchestrator.v1\"\xa2\x02\n" +
+	"\aRunInfo\x12\x19\n" +
+	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12!\n" +
+	"\ftask_preview\x18\x02 \x01(\tR\vtaskPreview\x12\x14\n" +
+	"\x05route\x18\x03 \x01(\tR\x05route\x124\n" +
+	"\x05state\x18\x04 \x01(\x0e2\x1e.aios.orchestrator.v1.RunStateR\x05state\x12!\n" +
+	"\fcurrent_node\x18\x05 \x01(\tR\vcurrentNode\x12\"\n" +
+	"\rstarted_at_ms\x18\x06 \x01(\x03R\vstartedAtMs\x12'\n" +
+	"\x10last_event_at_ms\x18\a \x01(\x03R\rlastEventAtMs\x12\x1d\n" +
+	"\n" +
+	"elapsed_ms\x18\b \x01(\x03R\telapsedMs\"\x11\n" +
+	"\x0fListRunsRequest\"B\n" +
+	"\rListRunsReply\x121\n" +
+	"\x04runs\x18\x01 \x03(\v2\x1d.aios.orchestrator.v1.RunInfoR\x04runs\"\xa4\x01\n" +
 	"\vStreamEvent\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x19\n" +
 	"\btrace_id\x18\x02 \x01(\tR\atraceId\x12\x12\n" +
@@ -270,10 +531,20 @@ const file_orchestrator_v1_orchestrator_proto_rawDesc = "" +
 	"\x06status\x18\x03 \x01(\tR\x06status\x12%\n" +
 	"\x0enode_summaries\x18\x04 \x03(\tR\rnodeSummaries\x12#\n" +
 	"\rprompt_tokens\x18\x05 \x01(\x05R\fpromptTokens\x12+\n" +
-	"\x11completion_tokens\x18\x06 \x01(\x05R\x10completionTokens2\xbf\x01\n" +
+	"\x11completion_tokens\x18\x06 \x01(\x05R\x10completionTokens*\xcc\x01\n" +
+	"\bRunState\x12\x19\n" +
+	"\x15RUN_STATE_UNSPECIFIED\x10\x00\x12\x15\n" +
+	"\x11RUN_STATE_RUNNING\x10\x01\x12\x12\n" +
+	"\x0eRUN_STATE_DONE\x10\x02\x12\x14\n" +
+	"\x10RUN_STATE_FAILED\x10\x03\x12\x14\n" +
+	"\x10RUN_STATE_DENIED\x10\x04\x12\x17\n" +
+	"\x13RUN_STATE_CANCELLED\x10\x05\x12\x16\n" +
+	"\x12RUN_STATE_ORPHANED\x10\x06\x12\x1d\n" +
+	"\x19RUN_STATE_BUDGET_EXCEEDED\x10\a2\x97\x02\n" +
 	"\fOrchestrator\x12S\n" +
 	"\aRunTask\x12$.aios.orchestrator.v1.RunTaskRequest\x1a\".aios.orchestrator.v1.RunTaskReply\x12Z\n" +
-	"\rRunTaskStream\x12$.aios.orchestrator.v1.RunTaskRequest\x1a!.aios.orchestrator.v1.StreamEvent0\x01BBZ@github.com/osije/ai-os/api/gen/go/orchestrator/v1;orchestratorv1b\x06proto3"
+	"\rRunTaskStream\x12$.aios.orchestrator.v1.RunTaskRequest\x1a!.aios.orchestrator.v1.StreamEvent0\x01\x12V\n" +
+	"\bListRuns\x12%.aios.orchestrator.v1.ListRunsRequest\x1a#.aios.orchestrator.v1.ListRunsReplyBBZ@github.com/osije/ai-os/api/gen/go/orchestrator/v1;orchestratorv1b\x06proto3"
 
 var (
 	file_orchestrator_v1_orchestrator_proto_rawDescOnce sync.Once
@@ -287,25 +558,34 @@ func file_orchestrator_v1_orchestrator_proto_rawDescGZIP() []byte {
 	return file_orchestrator_v1_orchestrator_proto_rawDescData
 }
 
-var file_orchestrator_v1_orchestrator_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_orchestrator_v1_orchestrator_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_orchestrator_v1_orchestrator_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_orchestrator_v1_orchestrator_proto_goTypes = []any{
-	(*StreamEvent)(nil),    // 0: aios.orchestrator.v1.StreamEvent
-	(*RunTaskRequest)(nil), // 1: aios.orchestrator.v1.RunTaskRequest
-	(*RunTaskReply)(nil),   // 2: aios.orchestrator.v1.RunTaskReply
-	nil,                    // 3: aios.orchestrator.v1.RunTaskRequest.ParamsEntry
+	(RunState)(0),           // 0: aios.orchestrator.v1.RunState
+	(*RunInfo)(nil),         // 1: aios.orchestrator.v1.RunInfo
+	(*ListRunsRequest)(nil), // 2: aios.orchestrator.v1.ListRunsRequest
+	(*ListRunsReply)(nil),   // 3: aios.orchestrator.v1.ListRunsReply
+	(*StreamEvent)(nil),     // 4: aios.orchestrator.v1.StreamEvent
+	(*RunTaskRequest)(nil),  // 5: aios.orchestrator.v1.RunTaskRequest
+	(*RunTaskReply)(nil),    // 6: aios.orchestrator.v1.RunTaskReply
+	nil,                     // 7: aios.orchestrator.v1.RunTaskRequest.ParamsEntry
 }
 var file_orchestrator_v1_orchestrator_proto_depIdxs = []int32{
-	2, // 0: aios.orchestrator.v1.StreamEvent.final:type_name -> aios.orchestrator.v1.RunTaskReply
-	3, // 1: aios.orchestrator.v1.RunTaskRequest.params:type_name -> aios.orchestrator.v1.RunTaskRequest.ParamsEntry
-	1, // 2: aios.orchestrator.v1.Orchestrator.RunTask:input_type -> aios.orchestrator.v1.RunTaskRequest
-	1, // 3: aios.orchestrator.v1.Orchestrator.RunTaskStream:input_type -> aios.orchestrator.v1.RunTaskRequest
-	2, // 4: aios.orchestrator.v1.Orchestrator.RunTask:output_type -> aios.orchestrator.v1.RunTaskReply
-	0, // 5: aios.orchestrator.v1.Orchestrator.RunTaskStream:output_type -> aios.orchestrator.v1.StreamEvent
-	4, // [4:6] is the sub-list for method output_type
-	2, // [2:4] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	0, // 0: aios.orchestrator.v1.RunInfo.state:type_name -> aios.orchestrator.v1.RunState
+	1, // 1: aios.orchestrator.v1.ListRunsReply.runs:type_name -> aios.orchestrator.v1.RunInfo
+	6, // 2: aios.orchestrator.v1.StreamEvent.final:type_name -> aios.orchestrator.v1.RunTaskReply
+	7, // 3: aios.orchestrator.v1.RunTaskRequest.params:type_name -> aios.orchestrator.v1.RunTaskRequest.ParamsEntry
+	5, // 4: aios.orchestrator.v1.Orchestrator.RunTask:input_type -> aios.orchestrator.v1.RunTaskRequest
+	5, // 5: aios.orchestrator.v1.Orchestrator.RunTaskStream:input_type -> aios.orchestrator.v1.RunTaskRequest
+	2, // 6: aios.orchestrator.v1.Orchestrator.ListRuns:input_type -> aios.orchestrator.v1.ListRunsRequest
+	6, // 7: aios.orchestrator.v1.Orchestrator.RunTask:output_type -> aios.orchestrator.v1.RunTaskReply
+	4, // 8: aios.orchestrator.v1.Orchestrator.RunTaskStream:output_type -> aios.orchestrator.v1.StreamEvent
+	3, // 9: aios.orchestrator.v1.Orchestrator.ListRuns:output_type -> aios.orchestrator.v1.ListRunsReply
+	7, // [7:10] is the sub-list for method output_type
+	4, // [4:7] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_orchestrator_v1_orchestrator_proto_init() }
@@ -318,13 +598,14 @@ func file_orchestrator_v1_orchestrator_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_orchestrator_v1_orchestrator_proto_rawDesc), len(file_orchestrator_v1_orchestrator_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   4,
+			NumEnums:      1,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_orchestrator_v1_orchestrator_proto_goTypes,
 		DependencyIndexes: file_orchestrator_v1_orchestrator_proto_depIdxs,
+		EnumInfos:         file_orchestrator_v1_orchestrator_proto_enumTypes,
 		MessageInfos:      file_orchestrator_v1_orchestrator_proto_msgTypes,
 	}.Build()
 	File_orchestrator_v1_orchestrator_proto = out.File

@@ -58,7 +58,7 @@ class AgentRuntimeServicer(agent_pb2_grpc.AgentRuntimeServicer):
         t_start = time.monotonic()
 
         try:
-            for ev in run_graph_stream(task, trace_id):
+            for ev in run_graph_stream(task, trace_id, params=dict(request.params)):
                 ev_type = ev.get("type", "")
 
                 if ev_type == "node":
@@ -138,7 +138,7 @@ class AgentRuntimeServicer(agent_pb2_grpc.AgentRuntimeServicer):
         t_start = time.monotonic()
 
         try:
-            result = run_graph(task)
+            result = run_graph(task, params=dict(request.params))
         except Exception as exc:
             logger.exception("RunGraph failed: %s", exc)
             context.set_code(grpc.StatusCode.INTERNAL)

@@ -557,6 +557,30 @@
   </div>
 </header>
 
+<!-- ===== M7-2 Live Runs 面板（2s 轮询 /v1/runs）===== -->
+<style>
+  .live-panel { max-width: 1060px; margin: 14px auto 0; padding: 0 24px; }
+  .live-card  { background: var(--bg-card, #fff); border: 1px solid var(--border, #e2e2e2);
+                border-radius: 10px; padding: 10px 16px; }
+  .live-title { font-size: 12px; letter-spacing: .08em; color: var(--text-faint, #999);
+                text-transform: uppercase; margin-bottom: 6px; }
+  .live-row   { display: flex; gap: 14px; align-items: baseline; font-size: 13px;
+                padding: 5px 0; border-top: 1px dashed var(--border, #eee); cursor: pointer; }
+  .live-row:first-of-type { border-top: none; }
+  .live-state { font-weight: 600; min-width: 86px; }
+  .st-RUNNING { color: #1a7fd4; } .st-DONE { color: #2e9e5b; }
+  .st-FAILED, .st-CANCELLED { color: #c94b3b; } .st-DENIED { color: #b58a2c; }
+  .live-id    { font-family: monospace; color: var(--text-faint, #888); }
+  .live-node  { color: var(--text-faint, #888); }
+  .live-empty { color: var(--text-faint, #aaa); font-size: 13px; padding: 4px 0; }
+</style>
+<div class="live-panel">
+  <div class="live-card">
+    <div class="live-title">Live Runs <span id="liveCount"></span></div>
+    <div id="liveList"><div class="live-empty">连接中…</div></div>
+  </div>
+</div>
+
 <!-- ===== Main Content ===== -->
 <main class="main" id="mainContent">
   <div class="state-empty">
@@ -1010,10 +1034,14 @@ function renderRecentList(traces, container) {
   }
 
   const items = traces.map(t => {
-    const isOk  = (t.status || '').toUpperCase() === 'OK';
-    const dot   = isOk ? '🟢' : '🔴';
-    const ms    = typeof t.elapsedMs === 'number'
-      ? `${(t.elapsedMs / 1000).toFixed(1)}s` : '';
+    // M7-2 ORPHANED 读时判定:durable 里滞留 RUNNING 超 10min = orchestrator 崩溃孤儿
+    let status = (t.status || '').toUpperCase();
+    if (status === 'RUNNING' && Date.now() - Number(t.startedAt || 0) > 10 * 60 * 1000) {
+      status = 'ORPHANED';
+    }
+    const dot = status === 'OK' ? '🟢' : (status === 'RUNNING' ? '🔵' : (status === 'ORPHANED' ? '🟠' : '🔴'));
+    const ms    = typeof t.elapsedMs === 'number' && t.elapsedMs > 0
+      ? `${(t.elapsedMs / 1000).toFixed(1)}s` : (status === 'RUNNING' ? '运行中' : status === 'ORPHANED' ? '孤儿' : '');
     return `
 <div class="dropdown-item" onclick="selectTrace(${JSON.stringify(escHtml(t.traceId))})">
   <span class="di-id">${escHtml(t.traceId)}</span>
@@ -1050,6 +1078,50 @@ document.addEventListener('click', e => {
 /* =====================================================================
    初始化：读取 URL 参数
    ===================================================================== */
+/* ===== M7-2 Live Runs：2s 轮询 /v1/runs ===== */
+const RUN_STATE_LABEL = {
+  RUN_STATE_RUNNING: 'RUNNING', RUN_STATE_DONE: 'DONE', RUN_STATE_FAILED: 'FAILED',
+  RUN_STATE_DENIED: 'DENIED', RUN_STATE_CANCELLED: 'CANCELLED',
+  RUN_STATE_ORPHANED: 'ORPHANED', RUN_STATE_BUDGET_EXCEEDED: 'BUDGET_EXCEEDED',
+};
+
+async function pollLiveRuns() {
+  const box = document.getElementById('liveList');
+  try {
+    const res = await fetch('/v1/runs');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const runs = data.runs || [];
+    const running = runs.filter(r => r.state === 'RUN_STATE_RUNNING').length;
+    document.getElementById('liveCount').textContent =
+      runs.length ? `— ${running} 运行中 / ${runs.length} 总计` : '';
+    if (runs.length === 0) {
+      box.innerHTML = '<div class="live-empty">当前没有 run(发起一个任务试试)</div>';
+      return;
+    }
+    box.innerHTML = runs.map(r => {
+      const st = RUN_STATE_LABEL[r.state] || r.state;
+      const secs = (Number(r.elapsedMs || 0) / 1000).toFixed(1);
+      const node = r.currentNode ? `@ ${escHtml(r.currentNode)}` : '';
+      const route = r.route ? `[${escHtml(r.route)}]` : '';
+      return `<div class="live-row" onclick="selectTrace(${JSON.stringify(escHtml(r.traceId))})">
+  <span class="live-state st-${escHtml(st)}">${escHtml(st)}</span>
+  <span class="live-id">${escHtml(r.traceId)}</span>
+  <span>${route}</span><span class="live-node">${node}</span>
+  <span class="live-node">${secs}s</span>
+  <span class="di-task">${escHtml(r.taskPreview || '')}</span>
+</div>`;
+    }).join('');
+  } catch (e) {
+    box.innerHTML = `<div class="live-empty">live 数据不可用: ${escHtml(String(e))}</div>`;
+  }
+}
+
+(function initLive() {
+  pollLiveRuns();
+  setInterval(pollLiveRuns, 2000);
+})();
+
 (function init() {
   const demo    = getParam('demo');
   const traceId = getParam('trace');
