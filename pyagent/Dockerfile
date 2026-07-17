@@ -21,6 +21,8 @@ RUN pip install --no-cache-dir --index-url ${PIP_INDEX_URL} -r requirements.txt
 COPY pyagent/ /app/pyagent/
 COPY api/proto/ /app/api/proto/
 COPY third_party/ /app/third_party/
+# M7-1: 路由能力档案等配置（与 Go 镜像的 /app/configs 模式一致）
+COPY configs/ /app/configs/
 
 # 在镜像内重新生成 stubs（与 scripts/gen-py.sh 同一套 protoc 参数），
 # 覆盖本地可能 COPY 进来的旧 gen/，保证镜像永远用与 proto 契约一致的新 stubs。

@@ -1,0 +1,25 @@
+# M7-1 路由能力档案：per-route 的模型/温度/输出上限（软约束，pyagent 加载应用）。
+# 让路由从"prompt 人设"变成真实的资源调度维度；硬执法（工具白名单/预算熔断）在 M8。
+#
+# 字段全部可选：
+#   model        空 = 沿用 DEEPSEEK_MODEL 环境变量（默认 deepseek-chat）
+#   temperature  空 = provider 默认；分类/判别类调用建议 0
+#   max_tokens   空 = 不限制（provider 默认上限）
+# 文件缺失/损坏时 pyagent 安全降级为全空档案（等价于此前行为），仅打警告日志。
+# 路径由 ROUTE_PROFILES_FILE 环境变量覆盖，默认 configs/route-profiles.yaml。
+version: v1
+routes:
+  # research：问答/解释，允许一定发散
+  research:
+    temperature: 0.7
+    max_tokens: 2000
+  # coding：代码生成，低温度求稳定
+  coding:
+    temperature: 0.2
+    max_tokens: 4000
+  # review：审查/挑错，确定性优先
+  review:
+    temperature: 0.0
+    max_tokens: 4000
+  # audit：走 Tool Mesh 调外部审计器，LLM 参数用途有限，留默认
+  audit: {}

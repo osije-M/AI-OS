@@ -4,6 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     command: /app/toolservice
+    restart: unless-stopped
     environment:
       TOOL_SERVICE_ADDR: 0.0.0.0:9200
       # full profile 手动设为 http://auditserver:9500 以接入外部审计器；核心模式留空。
@@ -19,6 +20,9 @@ services:
     build:
       context: .
       dockerfile: pyagent/Dockerfile
+    # M7-0：崩溃自动拉起；停止时给 LLM 在飞请求留优雅窗口（配合 server.py 的 SIGTERM 处理）
+    restart: unless-stopped
+    stop_grace_period: 15s
     environment:
       AGENT_RUNTIME_ADDR: 0.0.0.0:9100
       TOOL_SERVICE_ADDR: toolservice:9200
@@ -39,6 +43,7 @@ services:
       context: .
       dockerfile: Dockerfile
     command: /app/tracestore
+    restart: unless-stopped
     environment:
       TRACE_STORE_ADDR: 0.0.0.0:9400
       TRACE_STORE_FILE: /app/data/traces.db
@@ -56,6 +61,7 @@ services:
       context: .
       dockerfile: Dockerfile
     command: /app/orchestrator
+    restart: unless-stopped
     environment:
       ORCHESTRATOR_ADDR: 0.0.0.0:9300
       # 拨号侧用 passthrough:/// 让 Go gRPC 走 OS 解析(Docker DNS)，
@@ -86,6 +92,7 @@ services:
       context: .
       dockerfile: Dockerfile
     command: /app/gateway
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
@@ -116,6 +123,7 @@ services:
       context: ../AI_smart_contract_auditor/go
       dockerfile: Dockerfile
     command: /app/auditserver
+    restart: unless-stopped
     environment:
       AUDIT_SERVER_ADDR: 0.0.0.0:9500
     healthcheck:

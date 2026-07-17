@@ -47,7 +47,7 @@ def test_run_graph_sums_usage_across_router_worker_reflect(monkeypatch):
 
     call_count = {"n": 0}
 
-    def fake_call_llm(task, system_prompt="", timeout_override=None, temperature=None):
+    def fake_call_llm(task, system_prompt="", timeout_override=None, temperature=None, **kwargs):
         call_count["n"] += 1
         return {
             "output": "research",  # valid route label AND not "RETRY..." for reflect
@@ -73,7 +73,7 @@ def test_run_graph_sums_usage_across_router_worker_reflect(monkeypatch):
 
 
 def test_llm_route_returns_usage_tuple(monkeypatch):
-    def fake_call_llm(task, system_prompt="", timeout_override=None, temperature=None):
+    def fake_call_llm(task, system_prompt="", timeout_override=None, temperature=None, **kwargs):
         return {
             "output": "coding",
             "latency_ms": 1,
@@ -120,7 +120,7 @@ def test_run_graph_stream_done_event_sums_router_and_worker_usage(monkeypatch):
 
     monkeypatch.setattr(graph, "_llm_route", fake_llm_route)
 
-    def fake_stream_llm(task, system_prompt, node_name, collector):
+    def fake_stream_llm(task, system_prompt, node_name, collector, **kwargs):
         collector.append({
             "output": "hello world",
             "ok": True,

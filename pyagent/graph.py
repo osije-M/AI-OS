@@ -200,7 +200,8 @@ def _call_tool_audit(source: str, rule_only: bool = False) -> tuple[dict | None,
 # ---------------------------------------------------------------------------
 
 def _call_llm(task: str, system_prompt: str = "", timeout_override: float | None = None,
-              temperature: float | None = None) -> dict:
+              temperature: float | None = None, model_override: str | None = None,
+              max_tokens: int | None = None) -> dict:
     """
     Call DeepSeek LLM with L1 retry and L3 model-switch.
 
@@ -210,6 +211,9 @@ def _call_llm(task: str, system_prompt: str = "", timeout_override: float | None
         timeout_override: override LLM_CALL_TIMEOUT_S for this call (e.g. fast routing)
         temperature:      sampling temperature; pass 0 for deterministic classification
                           (routing / reflect). None → provider default (workers).
+        model_override:   M7-1 route profile model; None → DEEPSEEK_MODEL env.
+                          L3 fallback model is unaffected (still DEEPSEEK_FALLBACK_MODEL).
+        max_tokens:       M7-1 route profile output cap; None → default 512.
 
     Returns:
         {
@@ -239,7 +243,7 @@ def _call_llm(task: str, system_prompt: str = "", timeout_override: float | None
         }
 
     base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-    primary_model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    primary_model = model_override or os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
     fallback_model = os.getenv("DEEPSEEK_FALLBACK_MODEL", "deepseek-reasoner")
     max_retries = _env_int("LLM_MAX_RETRIES", 2)
     backoff_base_ms = _env_int("LLM_RETRY_BACKOFF_MS", 500)
@@ -279,7 +283,7 @@ def _call_llm(task: str, system_prompt: str = "", timeout_override: float | None
                 create_kwargs = {
                     "model": model,
                     "messages": messages,
-                    "max_tokens": 512,
+                    "max_tokens": max_tokens if max_tokens is not None else 512,
                     "timeout": timeout_s,
                 }
                 if temperature is not None:
@@ -499,6 +503,47 @@ _SYSTEM_PROMPTS = {
     ),
 }
 
+# ---------------------------------------------------------------------------
+# M7-1 路由能力档案：per-route 的 model/temperature/max_tokens（软约束）。
+# configs/route-profiles.yaml，路径可用 ROUTE_PROFILES_FILE 覆盖；
+# 缺失/损坏时安全降级为空档案（等价于此前行为），仅打警告日志。
+# ---------------------------------------------------------------------------
+
+def _load_route_profiles(path: str | None = None) -> dict:
+    """Load per-route capability profiles. Returns {} on any failure (safe degrade)."""
+    import yaml  # noqa: PLC0415
+
+    rel = path or os.getenv("ROUTE_PROFILES_FILE", "configs/route-profiles.yaml")
+    # 双重解析：先按 cwd（native 从 repo root 跑 / 容器 WORKDIR /app），
+    # 再按 graph.py 位置回退（pytest 的 cwd 不可控）。
+    candidates = [rel, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), rel)]
+    for p in candidates:
+        if not os.path.isfile(p):
+            continue
+        try:
+            with open(p, encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            routes = data.get("routes") or {}
+            if not isinstance(routes, dict):
+                raise ValueError("routes must be a mapping")
+            logger.info("[profiles] route profiles loaded from %s: %s", p, sorted(routes.keys()))
+            return routes
+        except Exception as exc:
+            logger.warning("[profiles] failed to load %s (%s), degrading to empty profiles", p, exc)
+            return {}
+    logger.warning("[profiles] route profiles file %r not found, degrading to empty profiles", rel)
+    return {}
+
+
+_ROUTE_PROFILES: dict = _load_route_profiles()
+
+
+def _get_route_profile(route: str) -> dict:
+    """Return the capability profile for a route ({} when absent)."""
+    p = _ROUTE_PROFILES.get(route)
+    return p if isinstance(p, dict) else {}
+
+
 def _run_worker(state: AgentState, role: str) -> AgentState:
     """Shared worker implementation used by research/coding/review nodes."""
     task = state["task"]
@@ -509,10 +554,17 @@ def _run_worker(state: AgentState, role: str) -> AgentState:
     if tool_trace:
         trace.append(tool_trace)
 
-    # --- LLM call ---
+    # --- LLM call (M7-1: apply route capability profile) ---
     t0 = _now_ms()
     system_prompt = _SYSTEM_PROMPTS.get(role, "")
-    res = _call_llm(task, system_prompt=system_prompt)
+    profile = _get_route_profile(role)
+    res = _call_llm(
+        task,
+        system_prompt=system_prompt,
+        temperature=profile.get("temperature"),
+        model_override=profile.get("model"),
+        max_tokens=profile.get("max_tokens"),
+    )
 
     # Extend trace with retry/switch events
     trace.extend(res["events"])
@@ -949,7 +1001,8 @@ def _run_graph_stream_inner(task: str, trace_id: str):
                 # Online: DeepSeek streaming with L3 fallback on pre-first-token error
                 # Use a collector list to get return values from the sub-generator
                 collector: list[dict] = []  # will hold {"output":..., "ok":..., "prompt_tokens":..., "completion_tokens":...}
-                for ev in _stream_llm(task, system_prompt, route, collector):
+                for ev in _stream_llm(task, system_prompt, route, collector,
+                                      profile=_get_route_profile(route)):
                     yield ev
                 if collector:
                     full_output = collector[0].get("output", "")
@@ -986,7 +1039,8 @@ def _run_graph_stream_inner(task: str, trace_id: str):
     }
 
 
-def _stream_llm(task: str, system_prompt: str, node_name: str, collector: list):
+def _stream_llm(task: str, system_prompt: str, node_name: str, collector: list,
+                profile: dict | None = None):
     """
     Inner generator: streams tokens from DeepSeek with L3 fallback.
 
@@ -1004,11 +1058,19 @@ def _stream_llm(task: str, system_prompt: str, node_name: str, collector: list):
     switch to DEEPSEEK_FALLBACK_MODEL and retry. If failure happens after the
     first token was already yielded, yield an error event and stop.
     """
+    profile = profile or {}
     base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-    primary_model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    primary_model = profile.get("model") or os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
     fallback_model = os.getenv("DEEPSEEK_FALLBACK_MODEL", "deepseek-reasoner")
     timeout_s = _env_float("LLM_CALL_TIMEOUT_S", 30.0)
     api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+
+    # M7-1 route profile → create() 共享参数（temperature/max_tokens 可选）
+    profile_kwargs: dict = {}
+    if profile.get("temperature") is not None:
+        profile_kwargs["temperature"] = profile["temperature"]
+    if profile.get("max_tokens") is not None:
+        profile_kwargs["max_tokens"] = profile["max_tokens"]
 
     from openai import OpenAI  # noqa: PLC0415
 
@@ -1036,6 +1098,7 @@ def _stream_llm(task: str, system_prompt: str, node_name: str, collector: list):
                 stream=True,
                 timeout=timeout_s,
                 stream_options={"include_usage": True},
+                **profile_kwargs,
             )
         except Exception as exc:
             logger.debug(
@@ -1047,6 +1110,7 @@ def _stream_llm(task: str, system_prompt: str, node_name: str, collector: list):
                 messages=messages,
                 stream=True,
                 timeout=timeout_s,
+                **profile_kwargs,
             )
         for chunk in stream:
             delta = chunk.choices[0].delta.content if chunk.choices else None

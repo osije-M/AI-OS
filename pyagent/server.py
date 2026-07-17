@@ -27,16 +27,18 @@ from dotenv import load_dotenv  # noqa: E402
 _ROOT = os.path.join(os.path.dirname(__file__), "..")
 load_dotenv(os.path.join(_ROOT, ".env"), override=False)
 
-import grpc  # noqa: E402
-from agent.v1 import agent_pb2, agent_pb2_grpc  # noqa: E402
-from graph import run_graph, run_graph_stream  # noqa: E402
-
+# logging 必须在 import graph 之前配置：graph.py 模块级代码(路由档案加载等)
+# 会在 import 时打 INFO 日志，晚配置会让这些日志被无 handler 丢弃(M7-1 踩坑)。
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("agent_runtime")
+
+import grpc  # noqa: E402
+from agent.v1 import agent_pb2, agent_pb2_grpc  # noqa: E402
+from graph import run_graph, run_graph_stream  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -183,13 +185,35 @@ class AgentRuntimeServicer(agent_pb2_grpc.AgentRuntimeServicer):
 def serve():
     addr = os.getenv("AGENT_RUNTIME_ADDR", "0.0.0.0:9100")
     max_workers = int(os.getenv("AGENT_RUNTIME_WORKERS", "4"))
+    stop_grace_s = float(os.getenv("AGENT_RUNTIME_STOP_GRACE_S", "5"))
 
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers))
     agent_pb2_grpc.add_AgentRuntimeServicer_to_server(AgentRuntimeServicer(), server)
     server.add_insecure_port(addr)
+
+    # M7-0: graceful shutdown on SIGTERM/SIGINT — stop accepting new RPCs, give
+    # in-flight requests up to stop_grace_s to finish (compose stop_grace_period
+    # must be >= this, see docker-compose.yml). Windows native runs have weak
+    # SIGTERM semantics; the container (Linux) is the primary target.
+    import signal
+    import threading
+    stop_event = threading.Event()
+
+    def _graceful_shutdown(signum, _frame):
+        logger.info("received signal %s, graceful shutdown (grace=%.1fs)...", signum, stop_grace_s)
+        server.stop(grace=stop_grace_s)
+        stop_event.set()
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(sig, _graceful_shutdown)
+        except (ValueError, OSError):  # non-main thread / unsupported platform
+            logger.warning("cannot register handler for signal %s", sig)
+
     server.start()
     logger.info("AgentRuntime gRPC server listening on %s", addr)
     server.wait_for_termination()
+    logger.info("AgentRuntime gRPC server stopped gracefully")
 
 
 if __name__ == "__main__":
