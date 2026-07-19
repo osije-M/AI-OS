@@ -135,8 +135,12 @@
     max-width: 520px;
     z-index: 200;
     overflow: hidden;
+    /* M7 后记录多了:列表区限高可滚动,不再截断 */
+    max-height: 70vh;
+    flex-direction: column;
   }
-  .dropdown.open { display: block; }
+  .dropdown > div:last-child { overflow-y: auto; }
+  .dropdown.open { display: flex; }
   .dropdown-header {
     padding: 8px 12px;
     font-size: 11px;

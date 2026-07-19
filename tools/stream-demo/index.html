@@ -38,6 +38,19 @@
   .examples{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
   .ex{font-size:12.5px;padding:4px 10px;border:1px solid var(--border);border-radius:20px;
     background:var(--card);color:var(--muted);cursor:pointer}
+  /* M7-3 后续:链路流程图 + 终止 */
+  .pipeline{display:none;align-items:center;gap:8px;margin:14px 0 4px;font-size:13px;flex-wrap:wrap}
+  .pipeline.show{display:flex}
+  .step{padding:4px 12px;border-radius:14px;border:1px solid var(--muted);color:var(--muted);opacity:.55}
+  .step.active{opacity:1;border-color:#1a7fd4;color:#1a7fd4;animation:pulse 1.2s infinite}
+  .step.done{opacity:1;border-color:#2e9e5b;color:#2e9e5b}
+  .step.fail{opacity:1;border-color:#c94b3b;color:#c94b3b}
+  .step.cancelled{opacity:1;border-color:#b58a2c;color:#b58a2c}
+  .arrow{color:var(--muted);opacity:.5}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(26,127,212,.35)}50%{box-shadow:0 0 0 5px rgba(26,127,212,0)}}
+  #cancelBtn{display:none;border:1px solid #c94b3b;color:#c94b3b;background:transparent;
+    border-radius:8px;padding:0 14px;cursor:pointer}
+  #cancelBtn:hover{background:#c94b3b;color:#fff}
 </style>
 </head>
 <body>
@@ -48,6 +61,14 @@
   <div class="row">
     <textarea id="task" placeholder="例如：用三句话解释什么是 gRPC">用三句话解释什么是 gRPC</textarea>
     <button id="send">发送</button>
+    <button id="cancelBtn" title="终止当前任务">■ 终止</button>
+  </div>
+
+  <div class="pipeline" id="pipeline">
+    <span class="step" id="stPolicy">策略检查</span><span class="arrow">→</span>
+    <span class="step" id="stRoute">路由</span><span class="arrow">→</span>
+    <span class="step" id="stWorker">执行</span><span class="arrow">→</span>
+    <span class="step" id="stDone">完成</span>
   </div>
   <div class="examples">
     <span class="ex">用两句话解释微服务架构</span>
@@ -64,6 +85,26 @@
 <script>
 const $=s=>document.querySelector(s);
 const taskEl=$('#task'), sendEl=$('#send'), outEl=$('#out'), metaEl=$('#meta'), footEl=$('#foot');
+const cancelBtn=$('#cancelBtn'), pipeEl=$('#pipeline');
+let currentTraceId='';
+
+// M7-3 后续:流程图状态机(policy/route/worker/done 四步)
+function setStep(id,cls,label){const el=$('#'+id);el.className='step'+(cls?' '+cls:'');if(label)el.textContent=label;}
+function resetPipeline(){
+  pipeEl.classList.add('show');
+  setStep('stPolicy','active','策略检查');setStep('stRoute','','路由');
+  setStep('stWorker','','执行');setStep('stDone','','完成');
+}
+
+async function cancelCurrent(){
+  if(!currentTraceId) return;
+  cancelBtn.disabled=true;
+  try{
+    const r=await fetch(`/v1/run/${encodeURIComponent(currentTraceId)}/cancel`,{method:'POST'});
+    console.log('cancel',currentTraceId,await r.json());
+  }catch(e){console.error('cancel failed',e);}
+}
+cancelBtn.onclick=cancelCurrent;
 
 document.querySelectorAll('.ex').forEach(e=>e.onclick=()=>{taskEl.value=e.textContent;});
 
@@ -73,6 +114,7 @@ async function run(){
   const task=taskEl.value.trim();
   if(!task) return;
   sendEl.disabled=true; metaEl.innerHTML=''; outEl.textContent=''; footEl.textContent='';
+  currentTraceId=''; cancelBtn.disabled=false; resetPipeline();
   const t0=performance.now();
   badge('已发送','');
   outEl.innerHTML='<span class="cursor"></span>';
@@ -105,30 +147,53 @@ async function run(){
     outEl.textContent='请求失败：'+err.message+'\n（请确认 5 个服务已启动，并从 http://127.0.0.1:8000/chat 打开本页）';
   }finally{
     sendEl.disabled=false;
+    cancelBtn.style.display='none';
+    currentTraceId='';
   }
 
   function handle(ev){
+    // 任何事件都带 trace_id:第一时间记下并亮出终止按钮(仍在流式中才有意义)
+    if(!currentTraceId && ev.trace_id){
+      currentTraceId=traceId=ev.trace_id;
+      cancelBtn.style.display='inline-block';
+    }
     if(ev.type==='node'){
+      setStep('stPolicy','done');
       const m=(ev.content||'').match(/->\s*(\w+)/);
-      if(m) badge('路由: '+m[1],'route');
+      if(m){
+        badge('路由: '+m[1],'route');
+        setStep('stRoute','done','路由 ✓ '+m[1]);
+        setStep('stWorker','active','执行('+m[1]+')');
+      }
     }else if(ev.type==='token'){
+      setStep('stPolicy','done');
       tokenCount++;
       answer+=ev.content||'';
       outEl.innerHTML='';
       outEl.appendChild(document.createTextNode(answer));
       const c=document.createElement('span');c.className='cursor';outEl.appendChild(c);
     }else if(ev.type==='done'){
-      traceId=ev.trace_id||'';
+      traceId=ev.trace_id||traceId;
       const st=(ev.status||'OK');
       if(ev.output) {answer=ev.output;}
       outEl.textContent=answer;
-      if(st==='DENIED'){metaEl.innerHTML='';badge('被拦截 DENIED','deny');outEl.textContent=ev.output||'请求被 Policy 防火墙拦截';}
-      else badge(st, st==='OK'?'ok':'fail');
+      if(st==='DENIED'){
+        metaEl.innerHTML='';badge('被拦截 DENIED','deny');
+        outEl.textContent=ev.output||'请求被 Policy 防火墙拦截';
+        setStep('stPolicy','fail','策略拦截');setStep('stDone','fail','已拒绝');
+      }else if(st==='CANCELLED'){
+        metaEl.innerHTML='';badge('已终止 CANCELLED','deny');
+        setStep('stWorker','cancelled','执行已终止');setStep('stDone','cancelled','已终止');
+      }else{
+        badge(st, st==='OK'?'ok':'fail');
+        setStep('stWorker','done');setStep('stDone', st==='OK'?'done':'fail');
+      }
       const ms=Math.round(performance.now()-t0);
       footEl.innerHTML=`${tokenCount} 个 token · ${ms} ms · trace_id: <code>${traceId}</code>` +
         (traceId?` · <a href="/viewer?trace=${traceId}" target="_blank">查看链路 →</a>`:'');
     }else if(ev.type==='error'){
       metaEl.innerHTML='';badge('错误','fail');
+      setStep('stDone','fail','失败');
       outEl.textContent='错误：'+(ev.content||'unknown');
     }
   }

@@ -154,7 +154,7 @@ func (s *TraceStoreServiceImpl) List(ctx context.Context, req *tracev1.ListReque
 	}
 	rows, err := s.db.QueryContext(ctx, `
 SELECT trace_id, task, status, route, elapsed_ms, started_at, ended_at, output
-FROM traces ORDER BY ended_at DESC LIMIT ?`, limit)
+FROM traces ORDER BY started_at DESC LIMIT ?`, limit)
 	if err != nil {
 		log.Printf("[tracestore] list error: %v", err)
 		return &tracev1.ListReply{}, nil
