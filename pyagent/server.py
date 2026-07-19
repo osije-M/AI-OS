@@ -58,7 +58,13 @@ class AgentRuntimeServicer(agent_pb2_grpc.AgentRuntimeServicer):
         t_start = time.monotonic()
 
         try:
-            for ev in run_graph_stream(task, trace_id, params=dict(request.params)):
+            cancel_check = lambda: not context.is_active()  # noqa: E731  M7-3 协作式取消
+            for ev in run_graph_stream(task, trace_id, params=dict(request.params),
+                                       cancel_check=cancel_check):
+                # M7-3:对端(orchestrator)已取消 → 停止产出,尽快释放资源
+                if not context.is_active():
+                    logger.info("RunGraphStream cancelled trace_id=%s, aborting", trace_id)
+                    return
                 ev_type = ev.get("type", "")
 
                 if ev_type == "node":
@@ -138,7 +144,8 @@ class AgentRuntimeServicer(agent_pb2_grpc.AgentRuntimeServicer):
         t_start = time.monotonic()
 
         try:
-            result = run_graph(task, params=dict(request.params))
+            result = run_graph(task, params=dict(request.params),
+                               cancel_check=lambda: not context.is_active())  # M7-3
         except Exception as exc:
             logger.exception("RunGraph failed: %s", exc)
             context.set_code(grpc.StatusCode.INTERNAL)

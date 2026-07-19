@@ -546,6 +546,7 @@ def _get_route_profile(route: str) -> dict:
 
 def _run_worker(state: AgentState, role: str) -> AgentState:
     """Shared worker implementation used by research/coding/review nodes."""
+    _check_cancelled(f"worker:{role}")  # M7-3 节点边界检查点
     task = state["task"]
     trace = list(state["trace"])
 
@@ -595,6 +596,7 @@ def _run_worker(state: AgentState, role: str) -> AgentState:
 # ---------------------------------------------------------------------------
 
 def supervisor_node(state: AgentState) -> AgentState:
+    _check_cancelled("supervisor")  # M7-3
     """Classify task intent and decide routing."""
     t0 = _now_ms()
     task = state["task"]
@@ -631,6 +633,7 @@ def review_node(state: AgentState) -> AgentState:
 
 
 def audit_node(state: AgentState) -> AgentState:
+    _check_cancelled("audit")  # M7-3
     """
     Audit worker: extract Solidity source from task, call ToolService.Invoke("audit"),
     format result into output. Gracefully degrades when ToolService is unreachable.
@@ -714,6 +717,7 @@ def audit_node(state: AgentState) -> AgentState:
 
 
 def reflect_node(state: AgentState) -> AgentState:
+    _check_cancelled("reflect")  # M7-3
     """Judge whether the output sufficiently answers the task."""
     t0 = _now_ms()
     task = state["task"]
@@ -856,6 +860,38 @@ def get_graph() -> Any:
     return _GRAPH
 
 
+# ---------------------------------------------------------------------------
+# M7-3 协作式取消:server.py 把 gRPC context 活性探针经 contextvar 注入,
+# 节点入口与 demo 睡眠分片检查;命中抛 _RunCancelled,run_graph 捕获后礼貌收尾。
+# 注:多数情况下 gRPC 响应通道已被对端掐断,这里的收尾主要为"尽快停止烧钱/占线程",
+# 权威的 CANCELLED 状态判定在 Go 侧(registry.cancelRequested)。
+# ---------------------------------------------------------------------------
+import contextvars
+
+_CANCEL_CHECK: contextvars.ContextVar = contextvars.ContextVar("cancel_check", default=None)
+
+
+class _RunCancelled(Exception):
+    """Internal: current run was cancelled by the peer (orchestrator)."""
+
+
+def _check_cancelled(where: str) -> None:
+    check = _CANCEL_CHECK.get()
+    if check is not None and check():
+        logger.info("[cancel] run cancelled, aborting at %s", where)
+        raise _RunCancelled(where)
+
+
+def _interruptible_sleep(seconds: float, cancel_check=None) -> None:
+    """按 200ms 分片睡眠;每片检查取消(contextvar 或显式传入的 cancel_check)。"""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        check = cancel_check or _CANCEL_CHECK.get()
+        if check is not None and check():
+            raise _RunCancelled("demo_delay")
+        time.sleep(min(0.2, max(0.0, deadline - time.monotonic())))
+
+
 def _demo_delay_seconds(params: dict | None) -> float:
     """M7-2 测试钩子:params.demo_delay_ms → 秒。
 
@@ -881,19 +917,33 @@ def _demo_delay_seconds(params: dict | None) -> float:
     return min(ms, 30_000) / 1000.0
 
 
-def run_graph(task: str, params: dict | None = None) -> dict:
+def run_graph(task: str, params: dict | None = None, cancel_check=None) -> dict:
     """
     Run the graph for a task.
-    Returns dict with keys: output, trace (list of dicts), status ("OK" or "FAILED"),
+    Returns dict with keys: output, trace (list of dicts), status ("OK"/"FAILED"/"CANCELLED"),
     route, prompt_tokens, completion_tokens (cumulative usage across all LLM calls
     in the graph run: router + worker(s) + reflect; 0/0 in offline mode).
     params: 透传的请求参数(M7-2 仅识别测试钩子 demo_delay_ms,离线模式生效)。
+    cancel_check: M7-3 协作式取消探针(callable → bool,True=对端已取消)。
     """
-    delay = _demo_delay_seconds(params)
-    if delay > 0:
-        logger.info("[demo] offline demo delay %.1fs (trace visibility hook)", delay)
-        time.sleep(delay)
+    token = _CANCEL_CHECK.set(cancel_check)
+    try:
+        delay = _demo_delay_seconds(params)
+        if delay > 0:
+            logger.info("[demo] offline demo delay %.1fs (trace visibility hook)", delay)
+            _interruptible_sleep(delay)
+        return _run_graph_inner(task)
+    except _RunCancelled as exc:
+        logger.info("[cancel] run_graph cancelled (%s)", exc)
+        return {
+            "output": "cancelled by user", "trace": [], "status": "CANCELLED",
+            "route": "", "prompt_tokens": 0, "completion_tokens": 0,
+        }
+    finally:
+        _CANCEL_CHECK.reset(token)
 
+
+def _run_graph_inner(task: str) -> dict:
     graph = get_graph()
     initial: AgentState = {
         "task": task,
@@ -921,7 +971,7 @@ def run_graph(task: str, params: dict | None = None) -> dict:
 # Streaming path: run_graph_stream
 # ---------------------------------------------------------------------------
 
-def run_graph_stream(task: str, trace_id: str = "", params: dict | None = None):
+def run_graph_stream(task: str, trace_id: str = "", params: dict | None = None, cancel_check=None):
     """
     Generator: streaming version of run_graph.
 
@@ -936,13 +986,13 @@ def run_graph_stream(task: str, trace_id: str = "", params: dict | None = None):
       {"type":"error", "content":"<err>"}
     """
     try:
-        yield from _run_graph_stream_inner(task, trace_id, params)
+        yield from _run_graph_stream_inner(task, trace_id, params, cancel_check)
     except Exception as exc:
         logger.exception("[stream] unexpected generator error: %s", exc)
         yield {"type": "error", "content": f"internal generator error: {exc}"}
 
 
-def _run_graph_stream_inner(task: str, trace_id: str, params: dict | None = None):
+def _run_graph_stream_inner(task: str, trace_id: str, params: dict | None = None, cancel_check=None):
     """Inner generator - wrapped by run_graph_stream for top-level exception safety."""
     trace: list[dict] = []
 
@@ -1024,7 +1074,11 @@ def _run_graph_stream_inner(task: str, trace_id: str, params: dict | None = None
                 delay = _demo_delay_seconds(params)
                 if delay > 0:
                     logger.info("[demo] offline stream demo delay %.1fs", delay)
-                    time.sleep(delay)
+                    try:
+                        _interruptible_sleep(delay, cancel_check)
+                    except _RunCancelled:
+                        logger.info("[cancel] stream cancelled during demo delay")
+                        return
                 offline_text = f"[offline] echo: {task}"
                 chunk_size = 4
                 for i in range(0, len(offline_text), chunk_size):

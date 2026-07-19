@@ -26,6 +26,7 @@ const (
 	Orchestrator_RunTask_FullMethodName       = "/aios.orchestrator.v1.Orchestrator/RunTask"
 	Orchestrator_RunTaskStream_FullMethodName = "/aios.orchestrator.v1.Orchestrator/RunTaskStream"
 	Orchestrator_ListRuns_FullMethodName      = "/aios.orchestrator.v1.Orchestrator/ListRuns"
+	Orchestrator_CancelRun_FullMethodName     = "/aios.orchestrator.v1.Orchestrator/CancelRun"
 )
 
 // OrchestratorClient is the client API for Orchestrator service.
@@ -37,6 +38,9 @@ type OrchestratorClient interface {
 	RunTaskStream(ctx context.Context, in *RunTaskRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamEvent], error)
 	// M7-2：live 运行注册表查询（运行中/近期终态的 run 列表，内存态、单实例）。
 	ListRuns(ctx context.Context, in *ListRunsRequest, opts ...grpc.CallOption) (*ListRunsReply, error)
+	// M7-3：取消在飞 run（协作式 best-effort：Go 侧掐 gRPC context，Python 检查点尽快退出；
+	// 流式取消亚秒级，unary 在线最坏一个 LLM 调用时长）。
+	CancelRun(ctx context.Context, in *CancelRunRequest, opts ...grpc.CallOption) (*CancelRunReply, error)
 }
 
 type orchestratorClient struct {
@@ -86,6 +90,16 @@ func (c *orchestratorClient) ListRuns(ctx context.Context, in *ListRunsRequest, 
 	return out, nil
 }
 
+func (c *orchestratorClient) CancelRun(ctx context.Context, in *CancelRunRequest, opts ...grpc.CallOption) (*CancelRunReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CancelRunReply)
+	err := c.cc.Invoke(ctx, Orchestrator_CancelRun_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OrchestratorServer is the server API for Orchestrator service.
 // All implementations must embed UnimplementedOrchestratorServer
 // for forward compatibility.
@@ -95,6 +109,9 @@ type OrchestratorServer interface {
 	RunTaskStream(*RunTaskRequest, grpc.ServerStreamingServer[StreamEvent]) error
 	// M7-2：live 运行注册表查询（运行中/近期终态的 run 列表，内存态、单实例）。
 	ListRuns(context.Context, *ListRunsRequest) (*ListRunsReply, error)
+	// M7-3：取消在飞 run（协作式 best-effort：Go 侧掐 gRPC context，Python 检查点尽快退出；
+	// 流式取消亚秒级，unary 在线最坏一个 LLM 调用时长）。
+	CancelRun(context.Context, *CancelRunRequest) (*CancelRunReply, error)
 	mustEmbedUnimplementedOrchestratorServer()
 }
 
@@ -113,6 +130,9 @@ func (UnimplementedOrchestratorServer) RunTaskStream(*RunTaskRequest, grpc.Serve
 }
 func (UnimplementedOrchestratorServer) ListRuns(context.Context, *ListRunsRequest) (*ListRunsReply, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListRuns not implemented")
+}
+func (UnimplementedOrchestratorServer) CancelRun(context.Context, *CancelRunRequest) (*CancelRunReply, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelRun not implemented")
 }
 func (UnimplementedOrchestratorServer) mustEmbedUnimplementedOrchestratorServer() {}
 func (UnimplementedOrchestratorServer) testEmbeddedByValue()                      {}
@@ -182,6 +202,24 @@ func _Orchestrator_ListRuns_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Orchestrator_CancelRun_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelRunRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrchestratorServer).CancelRun(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Orchestrator_CancelRun_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrchestratorServer).CancelRun(ctx, req.(*CancelRunRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Orchestrator_ServiceDesc is the grpc.ServiceDesc for Orchestrator service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -196,6 +234,10 @@ var Orchestrator_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListRuns",
 			Handler:    _Orchestrator_ListRuns_Handler,
+		},
+		{
+			MethodName: "CancelRun",
+			Handler:    _Orchestrator_CancelRun_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

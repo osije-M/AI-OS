@@ -56,10 +56,31 @@ func NewOrchestratorServiceImpl(cfg *conf.Config, m *metrics.Metrics) *Orchestra
 
 // mapReplyState 把 agent 的字符串 status 映射到 RunState 终态。
 func mapReplyState(status string) orchestratorv1.RunState {
-	if status == "OK" {
+	switch status {
+	case "OK":
 		return orchestratorv1.RunState_RUN_STATE_DONE
+	case "CANCELLED":
+		return orchestratorv1.RunState_RUN_STATE_CANCELLED
 	}
 	return orchestratorv1.RunState_RUN_STATE_FAILED
+}
+
+// isUserCancelled 判定错误是否为"用户 CancelRun 导致的取消"(M7-3)。
+// 只认 registry 的 cancelRequested 标记,不猜错误字符串——下游断开/超时同样产生
+// Canceled/DeadlineExceeded,语义完全不同。
+func (s *OrchestratorServiceImpl) isUserCancelled(traceID string, err error) bool {
+	if err == nil {
+		return false
+	}
+	code := status.Code(err)
+	return (code == codes.Canceled || code == codes.DeadlineExceeded) && s.runs.CancelRequested(traceID)
+}
+
+// CancelRun 取消在飞 run(M7-3):只发信号,状态迁移由持有 handler 完成。
+func (s *OrchestratorServiceImpl) CancelRun(_ context.Context, req *orchestratorv1.CancelRunRequest) (*orchestratorv1.CancelRunReply, error) {
+	found, st := s.runs.Cancel(req.TraceId)
+	log.Printf("[orchestrator] CancelRun trace=%s found=%v state=%v", req.TraceId, found, st)
+	return &orchestratorv1.CancelRunReply{Found: found, State: st}, nil
 }
 
 // ListRuns 返回 live 注册表快照（M7-2）。
@@ -200,31 +221,39 @@ func (s *OrchestratorServiceImpl) captureTrace(traceID, task string, reply *agen
 	}
 }
 
-func (s *OrchestratorServiceImpl) captureDeniedTrace(traceID, task, reason string, policyStep *tracev1.Step, startedAt, endedAt int64) {
+// captureSimpleTrace 写一条无 agent 步骤的终态 trace(DENIED / CANCELLED 用)。
+func (s *OrchestratorServiceImpl) captureSimpleTrace(traceID, task, traceStatus, reason string, policyStep *tracev1.Step, startedAt, endedAt int64) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	conn, err := grpc.NewClient(s.traceStoreAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Printf("[orchestrator] denied trace capture dial error: %v", err)
+		log.Printf("[orchestrator] %s trace capture dial error: %v", traceStatus, err)
 		return
 	}
 	defer conn.Close()
+	steps := []*tracev1.Step{}
+	if policyStep != nil {
+		steps = append(steps, policyStep)
+	}
 	t := &tracev1.Trace{
 		TraceId:   traceID,
 		Task:      task,
-		Status:    "DENIED",
+		Status:    traceStatus,
 		Route:     "",
 		ElapsedMs: endedAt - startedAt,
 		StartedAt: startedAt,
 		EndedAt:   endedAt,
 		Output:    reason,
-		Steps:     []*tracev1.Step{policyStep},
+		Steps:     steps,
 	}
 	client := tracev1.NewTraceStoreClient(conn)
-	_, saveErr := client.Save(ctx, &tracev1.SaveRequest{Trace: t})
-	if saveErr != nil {
-		log.Printf("[orchestrator] denied trace save error: %v", saveErr)
+	if _, saveErr := client.Save(ctx, &tracev1.SaveRequest{Trace: t}); saveErr != nil {
+		log.Printf("[orchestrator] %s trace save error: %v", traceStatus, saveErr)
 	}
+}
+
+func (s *OrchestratorServiceImpl) captureDeniedTrace(traceID, task, reason string, policyStep *tracev1.Step, startedAt, endedAt int64) {
+	s.captureSimpleTrace(traceID, task, "DENIED", reason, policyStep, startedAt, endedAt)
 }
 
 func (s *OrchestratorServiceImpl) RunTask(ctx context.Context, req *orchestratorv1.RunTaskRequest) (*orchestratorv1.RunTaskReply, error) {
@@ -264,8 +293,10 @@ func (s *OrchestratorServiceImpl) RunTask(ctx context.Context, req *orchestrator
 		log.Printf("[orchestrator] policy TRANSFORM trace=%s reason=%s", traceID, decision.Reason)
 	}
 
-	// M7-2：进入执行即登记（deny 不入注册表）+ durable 开始记录（best-effort）
-	s.runs.Register(traceID, req.Task)
+	// M7-2/3：进入执行即登记（携带取消钩子;deny 不入注册表）+ durable 开始记录
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
+	s.runs.Register(traceID, req.Task, cancelRun)
 	go s.captureStart(traceID, req.Task, startedAt)
 
 	conn, err := grpc.NewClient(s.agentAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -297,7 +328,10 @@ func (s *OrchestratorServiceImpl) RunTask(ctx context.Context, req *orchestrator
 	// Retry loop: total attempts = maxRetries + 1.
 	var reply *agentv1.RunGraphReply
 	for attempt := 0; attempt <= s.maxRetries; attempt++ {
-		reply, err = agentClient.RunGraph(ctx, grpcReq)
+		reply, err = agentClient.RunGraph(runCtx, grpcReq)
+		if s.isUserCancelled(traceID, err) {
+			break // 用户取消:不重试,直接走取消收尾
+		}
 		if err == nil {
 			break // success
 		}
@@ -312,6 +346,18 @@ func (s *OrchestratorServiceImpl) RunTask(ctx context.Context, req *orchestrator
 	endedAt := time.Now().UnixMilli()
 
 	if err != nil {
+		// M7-3:用户取消 → CANCELLED 终态(区别于 FAILED)
+		if s.isUserCancelled(traceID, err) {
+			log.Printf("[orchestrator] RunGraph cancelled by user trace=%s", traceID)
+			s.recordRequest("", "CANCELLED", endedAt-startedAt)
+			s.runs.Finish(traceID, orchestratorv1.RunState_RUN_STATE_CANCELLED, "")
+			go s.captureSimpleTrace(traceID, req.Task, "CANCELLED", "cancelled by user", policyStep, startedAt, endedAt)
+			return &orchestratorv1.RunTaskReply{
+				TraceId: traceID,
+				Status:  "CANCELLED",
+				Output:  "cancelled by user",
+			}, nil
+		}
 		log.Printf("[orchestrator] RunGraph final error after %d attempt(s): %v", s.maxRetries+1, err)
 		s.recordRequest("", "FAILED", endedAt-startedAt)
 		s.runs.Finish(traceID, orchestratorv1.RunState_RUN_STATE_FAILED, "")
@@ -391,11 +437,13 @@ func (s *OrchestratorServiceImpl) RunTaskStream(req *orchestratorv1.RunTaskReque
 		agent = "supervisor"
 	}
 
-	// M7-2：进入执行即登记 + durable 开始记录（best-effort）
-	s.runs.Register(traceID, task)
+	// M7-2/3：进入执行即登记(携带取消钩子)+ durable 开始记录（best-effort）
+	runCtx, cancelRun := context.WithCancel(stream.Context())
+	defer cancelRun()
+	s.runs.Register(traceID, task, cancelRun)
 	go s.captureStart(traceID, task, startedAt)
 	// 兜底:任何提前 return(下游 sendErr、recv 异常)都保证离开 RUNNING;
-	// 正常路径先 Finish(DONE/FAILED),此 defer 因终态幂等而无操作。
+	// 正常路径先 Finish(DONE/FAILED/CANCELLED),此 defer 因终态幂等而无操作。
 	defer s.runs.Finish(traceID, orchestratorv1.RunState_RUN_STATE_FAILED, "")
 
 	conn, err := grpc.NewClient(s.agentAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -413,7 +461,7 @@ func (s *OrchestratorServiceImpl) RunTaskStream(req *orchestratorv1.RunTaskReque
 	defer conn.Close()
 
 	agentClient := agentv1.NewAgentRuntimeClient(conn)
-	agentStream, err := agentClient.RunGraphStream(stream.Context(), &agentv1.RunGraphRequest{
+	agentStream, err := agentClient.RunGraphStream(runCtx, &agentv1.RunGraphRequest{
 		TraceId: traceID,
 		Task:    task,
 		Agent:   agent,
@@ -441,6 +489,24 @@ func (s *OrchestratorServiceImpl) RunTaskStream(req *orchestratorv1.RunTaskReque
 			break
 		}
 		if recvErr != nil {
+			// M7-3:用户取消 → 发 CANCELLED 终结事件而非 error
+			if s.isUserCancelled(traceID, recvErr) {
+				endedAt = time.Now().UnixMilli()
+				log.Printf("[orchestrator] stream cancelled by user trace=%s", traceID)
+				_ = stream.Send(&orchestratorv1.StreamEvent{
+					Type:    "done",
+					TraceId: traceID,
+					Final: &orchestratorv1.RunTaskReply{
+						TraceId: traceID,
+						Status:  "CANCELLED",
+						Output:  "cancelled by user",
+					},
+				})
+				s.recordRequest("", "CANCELLED", endedAt-startedAt)
+				s.runs.Finish(traceID, orchestratorv1.RunState_RUN_STATE_CANCELLED, "")
+				go s.captureSimpleTrace(traceID, task, "CANCELLED", "cancelled by user", policyStep, startedAt, endedAt)
+				break
+			}
 			log.Printf("[orchestrator] stream recv error: %v", recvErr)
 			_ = stream.Send(&orchestratorv1.StreamEvent{
 				Type:    "error",

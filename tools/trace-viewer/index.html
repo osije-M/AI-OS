@@ -573,6 +573,10 @@
   .live-id    { font-family: monospace; color: var(--text-faint, #888); }
   .live-node  { color: var(--text-faint, #888); }
   .live-empty { color: var(--text-faint, #aaa); font-size: 13px; padding: 4px 0; }
+  .live-cancel { margin-left: auto; font-size: 12px; padding: 2px 10px; cursor: pointer;
+                 border: 1px solid #c94b3b; color: #c94b3b; background: transparent;
+                 border-radius: 6px; }
+  .live-cancel:hover { background: #c94b3b; color: #fff; }
 </style>
 <div class="live-panel">
   <div class="live-card">
@@ -1110,17 +1114,33 @@ async function pollLiveRuns() {
       const secs = (Number(r.elapsedMs || 0) / 1000).toFixed(1);
       const node = r.currentNode ? `@ ${escHtml(r.currentNode)}` : '';
       const route = r.route ? `[${escHtml(r.route)}]` : '';
+      // M7-3:RUNNING 行加取消按钮(stopPropagation 防触发行点击跳 trace)
+      const cancelBtn = st === 'RUNNING'
+        ? `<button class="live-cancel" onclick="event.stopPropagation();cancelRun('${escHtml(r.traceId)}')">✕ 取消</button>`
+        : '';
       return `<div class="live-row" onclick="selectTrace('${escHtml(r.traceId)}')">
   <span class="live-state st-${escHtml(st)}">${escHtml(st)}</span>
   <span class="live-id">${escHtml(r.traceId)}</span>
   <span>${route}</span><span class="live-node">${node}</span>
   <span class="live-node">${secs}s</span>
   <span class="di-task">${escHtml(r.taskPreview || '')}</span>
+  ${cancelBtn}
 </div>`;
     }).join('');
   } catch (e) {
     box.innerHTML = `<div class="live-empty">live 数据不可用: ${escHtml(String(e))}</div>`;
   }
+}
+
+async function cancelRun(traceId) {
+  try {
+    const res = await fetch(`/v1/run/${encodeURIComponent(traceId)}/cancel`, { method: 'POST' });
+    const data = await res.json();
+    console.log('cancelRun', traceId, data);
+  } catch (e) {
+    console.error('cancelRun failed', e);
+  }
+  pollLiveRuns(); // 立即刷新
 }
 
 (function initLive() {

@@ -60,6 +60,25 @@ jobs:
           grep -q '"status":"OK"' /tmp/run.json || { echo "FAIL: slow run did not finish OK"; exit 1; }
           runs_after=$(curl -s http://127.0.0.1:8000/v1/runs)
           echo "$runs_after" | grep -q 'RUN_STATE_DONE' || { echo "FAIL: expected DONE in /v1/runs after finish"; exit 1; }
+      - name: Cancel lifecycle check (M7-3)
+        run: |
+          set -euo pipefail
+          curl -s -X POST http://127.0.0.1:8000/v1/run -H 'Content-Type: application/json' \
+            -d '{"task":"slow run to be cancelled","params":{"demo_delay_ms":"20000"}}' > /tmp/cancelled-run.json &
+          RUN_PID=$!
+          sleep 3
+          tid=$(curl -s http://127.0.0.1:8000/v1/runs | grep -o '"traceId":"trace-[0-9]*"' | head -1 | cut -d'"' -f4)
+          echo "cancelling $tid"
+          cancel_resp=$(curl -s -X POST "http://127.0.0.1:8000/v1/run/$tid/cancel")
+          echo "cancel response: $cancel_resp"
+          echo "$cancel_resp" | grep -q 'CANCELLED' || { echo "FAIL: cancel endpoint did not accept"; exit 1; }
+          wait $RUN_PID
+          cat /tmp/cancelled-run.json
+          grep -q '"status":"CANCELLED"' /tmp/cancelled-run.json || { echo "FAIL: original request did not end CANCELLED"; exit 1; }
+          curl -s http://127.0.0.1:8000/v1/runs | grep -q 'RUN_STATE_CANCELLED' || { echo "FAIL: expected CANCELLED in /v1/runs"; exit 1; }
+          trace_status=$(curl -s "http://127.0.0.1:8000/v1/trace/$tid" | grep -o '"status":"[A-Z]*"' | head -1)
+          echo "durable trace: $trace_status"
+          echo "$trace_status" | grep -q 'CANCELLED' || { echo "FAIL: durable trace not CANCELLED"; exit 1; }
       - name: Dump compose logs on failure
         if: failure()
         run: docker compose logs

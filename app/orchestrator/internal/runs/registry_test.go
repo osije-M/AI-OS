@@ -27,7 +27,7 @@ func find(list []*orchestratorv1.RunInfo, id string) *orchestratorv1.RunInfo {
 
 func TestLifecycleAndTransitions(t *testing.T) {
 	r := New(time.Minute, 10, nil)
-	r.Register("t1", "task one")
+	r.Register("t1", "task one", nil)
 
 	if got := find(r.List(), "t1"); got == nil || got.State != running {
 		t.Fatalf("expect t1 RUNNING, got %+v", got)
@@ -58,7 +58,7 @@ func TestLifecycleAndTransitions(t *testing.T) {
 func TestFinishIgnoresInvalid(t *testing.T) {
 	r := New(time.Minute, 10, nil)
 	r.Finish("nope", done, "")               // unknown trace:不 panic
-	r.Register("t1", "x")
+	r.Register("t1", "x", nil)
 	r.Finish("t1", running, "")              // 非终态参数:忽略
 	if got := find(r.List(), "t1"); got.State != running {
 		t.Fatalf("invalid Finish must be ignored, got %v", got.State)
@@ -69,7 +69,7 @@ func TestTTLEviction(t *testing.T) {
 	r := New(50*time.Millisecond, 10, nil)
 	base := time.Now()
 	r.now = func() time.Time { return base }
-	r.Register("t1", "x")
+	r.Register("t1", "x", nil)
 	r.Finish("t1", done, "")
 
 	r.now = func() time.Time { return base.Add(100 * time.Millisecond) }
@@ -80,12 +80,12 @@ func TestTTLEviction(t *testing.T) {
 
 func TestCapacityPrefersTerminalEviction(t *testing.T) {
 	r := New(time.Hour, 3, nil)
-	r.Register("old-done", "x")
+	r.Register("old-done", "x", nil)
 	r.Finish("old-done", done, "")
-	r.Register("r1", "x")
-	r.Register("r2", "x")
+	r.Register("r1", "x", nil)
+	r.Register("r2", "x", nil)
 	// 第 4 个触发驱逐:应优先踢终态 old-done,而不是 RUNNING
-	r.Register("r3", "x")
+	r.Register("r3", "x", nil)
 
 	list := r.List()
 	if find(list, "old-done") != nil {
@@ -103,8 +103,8 @@ func TestActiveCountAndGaugeHook(t *testing.T) {
 	last := -1
 	r := New(time.Minute, 10, func(n int) { mu.Lock(); last = n; mu.Unlock() })
 
-	r.Register("t1", "x")
-	r.Register("t2", "x")
+	r.Register("t1", "x", nil)
+	r.Register("t2", "x", nil)
 	mu.Lock()
 	if last != 2 {
 		t.Fatalf("gauge hook expect 2, got %d", last)
@@ -127,7 +127,7 @@ func TestConcurrentAccess(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			id := fmt.Sprintf("t%d", i)
-			r.Register(id, "task")
+			r.Register(id, "task", nil)
 			r.MarkNode(id, "n")
 			r.Touch(id)
 			r.List()
@@ -148,9 +148,51 @@ func TestTaskPreviewTruncation(t *testing.T) {
 		long += "字"
 	}
 	r := New(time.Minute, 10, nil)
-	r.Register("t1", long)
+	r.Register("t1", long, nil)
 	got := find(r.List(), "t1")
 	if l := len([]rune(got.TaskPreview)); l != taskPreviewMaxRunes+1 { // +1 省略号
 		t.Fatalf("preview should be %d runes, got %d", taskPreviewMaxRunes+1, l)
+	}
+}
+
+func TestCancelBranches(t *testing.T) {
+	r := New(time.Minute, 10, nil)
+
+	// 未知 trace
+	if found, _ := r.Cancel("nope"); found {
+		t.Fatalf("cancel unknown trace must return found=false")
+	}
+
+	// RUNNING:标记 + 调 cancel 钩子;状态不由 Cancel 迁移(单写者)
+	fired := false
+	r.Register("t1", "x", func() { fired = true })
+	found, st := r.Cancel("t1")
+	if !found || st != cancelled || !fired {
+		t.Fatalf("cancel running: found=%v st=%v fired=%v", found, st, fired)
+	}
+	if got := find(r.List(), "t1"); got.State != running {
+		t.Fatalf("Cancel must not transition state itself, got %v", got.State)
+	}
+	if !r.CancelRequested("t1") {
+		t.Fatalf("CancelRequested must be set")
+	}
+	// handler 观察到取消后 Finish(CANCELLED)
+	r.Finish("t1", cancelled, "research")
+	if got := find(r.List(), "t1"); got.State != cancelled {
+		t.Fatalf("expect CANCELLED after Finish, got %v", got.State)
+	}
+
+	// 已终态:幂等返回当前终态,不再调钩子
+	found2, st2 := r.Cancel("t1")
+	if !found2 || st2 != cancelled {
+		t.Fatalf("cancel terminal: found=%v st=%v", found2, st2)
+	}
+}
+
+func TestCancelRequestedFalseForOthers(t *testing.T) {
+	r := New(time.Minute, 10, nil)
+	r.Register("t1", "x", nil)
+	if r.CancelRequested("t1") || r.CancelRequested("unknown") {
+		t.Fatalf("CancelRequested must default false")
 	}
 }

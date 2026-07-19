@@ -159,6 +159,29 @@ func (g *GatewayServiceImpl) HandleListRuns(ctx khttp.Context) error {
 	return nil
 }
 
+// HandleCancelRun handles POST /v1/run/{id}/cancel — M7-3 取消在飞 run。
+func (g *GatewayServiceImpl) HandleCancelRun(ctx khttp.Context) error {
+	id := ctx.Vars().Get("id")
+	if id == "" {
+		return ctx.JSON(400, map[string]string{"error": "trace id is required"})
+	}
+	conn, client, err := g.dialOrchestrator()
+	if err != nil {
+		return ctx.JSON(502, map[string]string{"error": err.Error()})
+	}
+	defer conn.Close()
+	rCtx, cancel := context.WithTimeout(ctx.Request().Context(), 5*time.Second)
+	defer cancel()
+	reply, err := client.CancelRun(rCtx, &orchestratorv1.CancelRunRequest{TraceId: id})
+	if err != nil {
+		return ctx.JSON(502, map[string]string{"error": err.Error()})
+	}
+	if !reply.Found {
+		return ctx.JSON(404, map[string]interface{}{"found": false, "error": "run not found (never existed or evicted)"})
+	}
+	return ctx.JSON(200, map[string]interface{}{"found": true, "state": reply.State.String()})
+}
+
 // HandleRunStream handles POST /v1/run/stream — SSE streaming endpoint.
 // Parses {task, agent} from body, calls orchestrator.RunTaskStream, and writes
 // Server-Sent Events with flush after every event.

@@ -13,6 +13,18 @@ service Orchestrator {
   rpc RunTaskStream(RunTaskRequest) returns (stream StreamEvent);
   // M7-2：live 运行注册表查询（运行中/近期终态的 run 列表，内存态、单实例）。
   rpc ListRuns(ListRunsRequest) returns (ListRunsReply);
+  // M7-3：取消在飞 run（协作式 best-effort：Go 侧掐 gRPC context，Python 检查点尽快退出；
+  // 流式取消亚秒级，unary 在线最坏一个 LLM 调用时长）。
+  rpc CancelRun(CancelRunRequest) returns (CancelRunReply);
+}
+
+message CancelRunRequest {
+  string trace_id = 1;
+}
+
+message CancelRunReply {
+  bool found = 1;       // false = 注册表里没有这个 trace（从未存在或已 TTL 驱逐）
+  RunState state = 2;   // 取消已受理=CANCELLED（预期终态）；已终态=当前终态原样返回
 }
 
 // M7-2 run 生命周期状态（live 视图用；TraceStore 的 durable Status 维持字符串）。

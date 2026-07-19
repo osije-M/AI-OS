@@ -92,6 +92,102 @@ func (RunState) EnumDescriptor() ([]byte, []int) {
 	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{0}
 }
 
+type CancelRunRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TraceId       string                 `protobuf:"bytes,1,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelRunRequest) Reset() {
+	*x = CancelRunRequest{}
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelRunRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelRunRequest) ProtoMessage() {}
+
+func (x *CancelRunRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelRunRequest.ProtoReflect.Descriptor instead.
+func (*CancelRunRequest) Descriptor() ([]byte, []int) {
+	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *CancelRunRequest) GetTraceId() string {
+	if x != nil {
+		return x.TraceId
+	}
+	return ""
+}
+
+type CancelRunReply struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Found         bool                   `protobuf:"varint,1,opt,name=found,proto3" json:"found,omitempty"`                                    // false = 注册表里没有这个 trace（从未存在或已 TTL 驱逐）
+	State         RunState               `protobuf:"varint,2,opt,name=state,proto3,enum=aios.orchestrator.v1.RunState" json:"state,omitempty"` // 取消已受理=CANCELLED（预期终态）；已终态=当前终态原样返回
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelRunReply) Reset() {
+	*x = CancelRunReply{}
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelRunReply) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelRunReply) ProtoMessage() {}
+
+func (x *CancelRunReply) ProtoReflect() protoreflect.Message {
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelRunReply.ProtoReflect.Descriptor instead.
+func (*CancelRunReply) Descriptor() ([]byte, []int) {
+	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *CancelRunReply) GetFound() bool {
+	if x != nil {
+		return x.Found
+	}
+	return false
+}
+
+func (x *CancelRunReply) GetState() RunState {
+	if x != nil {
+		return x.State
+	}
+	return RunState_RUN_STATE_UNSPECIFIED
+}
+
 // M7-2 单个 run 的 live 快照。
 type RunInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -109,7 +205,7 @@ type RunInfo struct {
 
 func (x *RunInfo) Reset() {
 	*x = RunInfo{}
-	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[0]
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -121,7 +217,7 @@ func (x *RunInfo) String() string {
 func (*RunInfo) ProtoMessage() {}
 
 func (x *RunInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[0]
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -134,7 +230,7 @@ func (x *RunInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunInfo.ProtoReflect.Descriptor instead.
 func (*RunInfo) Descriptor() ([]byte, []int) {
-	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{0}
+	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *RunInfo) GetTraceId() string {
@@ -201,7 +297,7 @@ type ListRunsRequest struct {
 
 func (x *ListRunsRequest) Reset() {
 	*x = ListRunsRequest{}
-	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[1]
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -213,7 +309,7 @@ func (x *ListRunsRequest) String() string {
 func (*ListRunsRequest) ProtoMessage() {}
 
 func (x *ListRunsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[1]
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -226,7 +322,7 @@ func (x *ListRunsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRunsRequest.ProtoReflect.Descriptor instead.
 func (*ListRunsRequest) Descriptor() ([]byte, []int) {
-	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{1}
+	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{3}
 }
 
 type ListRunsReply struct {
@@ -238,7 +334,7 @@ type ListRunsReply struct {
 
 func (x *ListRunsReply) Reset() {
 	*x = ListRunsReply{}
-	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[2]
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -250,7 +346,7 @@ func (x *ListRunsReply) String() string {
 func (*ListRunsReply) ProtoMessage() {}
 
 func (x *ListRunsReply) ProtoReflect() protoreflect.Message {
-	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[2]
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -263,7 +359,7 @@ func (x *ListRunsReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRunsReply.ProtoReflect.Descriptor instead.
 func (*ListRunsReply) Descriptor() ([]byte, []int) {
-	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{2}
+	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ListRunsReply) GetRuns() []*RunInfo {
@@ -287,7 +383,7 @@ type StreamEvent struct {
 
 func (x *StreamEvent) Reset() {
 	*x = StreamEvent{}
-	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[3]
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -299,7 +395,7 @@ func (x *StreamEvent) String() string {
 func (*StreamEvent) ProtoMessage() {}
 
 func (x *StreamEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[3]
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -312,7 +408,7 @@ func (x *StreamEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamEvent.ProtoReflect.Descriptor instead.
 func (*StreamEvent) Descriptor() ([]byte, []int) {
-	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{3}
+	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *StreamEvent) GetType() string {
@@ -361,7 +457,7 @@ type RunTaskRequest struct {
 
 func (x *RunTaskRequest) Reset() {
 	*x = RunTaskRequest{}
-	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[4]
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -373,7 +469,7 @@ func (x *RunTaskRequest) String() string {
 func (*RunTaskRequest) ProtoMessage() {}
 
 func (x *RunTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[4]
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -386,7 +482,7 @@ func (x *RunTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunTaskRequest.ProtoReflect.Descriptor instead.
 func (*RunTaskRequest) Descriptor() ([]byte, []int) {
-	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{4}
+	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *RunTaskRequest) GetTask() string {
@@ -424,7 +520,7 @@ type RunTaskReply struct {
 
 func (x *RunTaskReply) Reset() {
 	*x = RunTaskReply{}
-	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[5]
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -436,7 +532,7 @@ func (x *RunTaskReply) String() string {
 func (*RunTaskReply) ProtoMessage() {}
 
 func (x *RunTaskReply) ProtoReflect() protoreflect.Message {
-	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[5]
+	mi := &file_orchestrator_v1_orchestrator_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -449,7 +545,7 @@ func (x *RunTaskReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunTaskReply.ProtoReflect.Descriptor instead.
 func (*RunTaskReply) Descriptor() ([]byte, []int) {
-	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{5}
+	return file_orchestrator_v1_orchestrator_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *RunTaskReply) GetTraceId() string {
@@ -498,7 +594,12 @@ var File_orchestrator_v1_orchestrator_proto protoreflect.FileDescriptor
 
 const file_orchestrator_v1_orchestrator_proto_rawDesc = "" +
 	"\n" +
-	"\"orchestrator/v1/orchestrator.proto\x12\x14aios.orchestrator.v1\"\xa2\x02\n" +
+	"\"orchestrator/v1/orchestrator.proto\x12\x14aios.orchestrator.v1\"-\n" +
+	"\x10CancelRunRequest\x12\x19\n" +
+	"\btrace_id\x18\x01 \x01(\tR\atraceId\"\\\n" +
+	"\x0eCancelRunReply\x12\x14\n" +
+	"\x05found\x18\x01 \x01(\bR\x05found\x124\n" +
+	"\x05state\x18\x02 \x01(\x0e2\x1e.aios.orchestrator.v1.RunStateR\x05state\"\xa2\x02\n" +
 	"\aRunInfo\x12\x19\n" +
 	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12!\n" +
 	"\ftask_preview\x18\x02 \x01(\tR\vtaskPreview\x12\x14\n" +
@@ -540,11 +641,12 @@ const file_orchestrator_v1_orchestrator_proto_rawDesc = "" +
 	"\x10RUN_STATE_DENIED\x10\x04\x12\x17\n" +
 	"\x13RUN_STATE_CANCELLED\x10\x05\x12\x16\n" +
 	"\x12RUN_STATE_ORPHANED\x10\x06\x12\x1d\n" +
-	"\x19RUN_STATE_BUDGET_EXCEEDED\x10\a2\x97\x02\n" +
+	"\x19RUN_STATE_BUDGET_EXCEEDED\x10\a2\xf2\x02\n" +
 	"\fOrchestrator\x12S\n" +
 	"\aRunTask\x12$.aios.orchestrator.v1.RunTaskRequest\x1a\".aios.orchestrator.v1.RunTaskReply\x12Z\n" +
 	"\rRunTaskStream\x12$.aios.orchestrator.v1.RunTaskRequest\x1a!.aios.orchestrator.v1.StreamEvent0\x01\x12V\n" +
-	"\bListRuns\x12%.aios.orchestrator.v1.ListRunsRequest\x1a#.aios.orchestrator.v1.ListRunsReplyBBZ@github.com/osije/ai-os/api/gen/go/orchestrator/v1;orchestratorv1b\x06proto3"
+	"\bListRuns\x12%.aios.orchestrator.v1.ListRunsRequest\x1a#.aios.orchestrator.v1.ListRunsReply\x12Y\n" +
+	"\tCancelRun\x12&.aios.orchestrator.v1.CancelRunRequest\x1a$.aios.orchestrator.v1.CancelRunReplyBBZ@github.com/osije/ai-os/api/gen/go/orchestrator/v1;orchestratorv1b\x06proto3"
 
 var (
 	file_orchestrator_v1_orchestrator_proto_rawDescOnce sync.Once
@@ -559,33 +661,38 @@ func file_orchestrator_v1_orchestrator_proto_rawDescGZIP() []byte {
 }
 
 var file_orchestrator_v1_orchestrator_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_orchestrator_v1_orchestrator_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_orchestrator_v1_orchestrator_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_orchestrator_v1_orchestrator_proto_goTypes = []any{
-	(RunState)(0),           // 0: aios.orchestrator.v1.RunState
-	(*RunInfo)(nil),         // 1: aios.orchestrator.v1.RunInfo
-	(*ListRunsRequest)(nil), // 2: aios.orchestrator.v1.ListRunsRequest
-	(*ListRunsReply)(nil),   // 3: aios.orchestrator.v1.ListRunsReply
-	(*StreamEvent)(nil),     // 4: aios.orchestrator.v1.StreamEvent
-	(*RunTaskRequest)(nil),  // 5: aios.orchestrator.v1.RunTaskRequest
-	(*RunTaskReply)(nil),    // 6: aios.orchestrator.v1.RunTaskReply
-	nil,                     // 7: aios.orchestrator.v1.RunTaskRequest.ParamsEntry
+	(RunState)(0),            // 0: aios.orchestrator.v1.RunState
+	(*CancelRunRequest)(nil), // 1: aios.orchestrator.v1.CancelRunRequest
+	(*CancelRunReply)(nil),   // 2: aios.orchestrator.v1.CancelRunReply
+	(*RunInfo)(nil),          // 3: aios.orchestrator.v1.RunInfo
+	(*ListRunsRequest)(nil),  // 4: aios.orchestrator.v1.ListRunsRequest
+	(*ListRunsReply)(nil),    // 5: aios.orchestrator.v1.ListRunsReply
+	(*StreamEvent)(nil),      // 6: aios.orchestrator.v1.StreamEvent
+	(*RunTaskRequest)(nil),   // 7: aios.orchestrator.v1.RunTaskRequest
+	(*RunTaskReply)(nil),     // 8: aios.orchestrator.v1.RunTaskReply
+	nil,                      // 9: aios.orchestrator.v1.RunTaskRequest.ParamsEntry
 }
 var file_orchestrator_v1_orchestrator_proto_depIdxs = []int32{
-	0, // 0: aios.orchestrator.v1.RunInfo.state:type_name -> aios.orchestrator.v1.RunState
-	1, // 1: aios.orchestrator.v1.ListRunsReply.runs:type_name -> aios.orchestrator.v1.RunInfo
-	6, // 2: aios.orchestrator.v1.StreamEvent.final:type_name -> aios.orchestrator.v1.RunTaskReply
-	7, // 3: aios.orchestrator.v1.RunTaskRequest.params:type_name -> aios.orchestrator.v1.RunTaskRequest.ParamsEntry
-	5, // 4: aios.orchestrator.v1.Orchestrator.RunTask:input_type -> aios.orchestrator.v1.RunTaskRequest
-	5, // 5: aios.orchestrator.v1.Orchestrator.RunTaskStream:input_type -> aios.orchestrator.v1.RunTaskRequest
-	2, // 6: aios.orchestrator.v1.Orchestrator.ListRuns:input_type -> aios.orchestrator.v1.ListRunsRequest
-	6, // 7: aios.orchestrator.v1.Orchestrator.RunTask:output_type -> aios.orchestrator.v1.RunTaskReply
-	4, // 8: aios.orchestrator.v1.Orchestrator.RunTaskStream:output_type -> aios.orchestrator.v1.StreamEvent
-	3, // 9: aios.orchestrator.v1.Orchestrator.ListRuns:output_type -> aios.orchestrator.v1.ListRunsReply
-	7, // [7:10] is the sub-list for method output_type
-	4, // [4:7] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	0, // 0: aios.orchestrator.v1.CancelRunReply.state:type_name -> aios.orchestrator.v1.RunState
+	0, // 1: aios.orchestrator.v1.RunInfo.state:type_name -> aios.orchestrator.v1.RunState
+	3, // 2: aios.orchestrator.v1.ListRunsReply.runs:type_name -> aios.orchestrator.v1.RunInfo
+	8, // 3: aios.orchestrator.v1.StreamEvent.final:type_name -> aios.orchestrator.v1.RunTaskReply
+	9, // 4: aios.orchestrator.v1.RunTaskRequest.params:type_name -> aios.orchestrator.v1.RunTaskRequest.ParamsEntry
+	7, // 5: aios.orchestrator.v1.Orchestrator.RunTask:input_type -> aios.orchestrator.v1.RunTaskRequest
+	7, // 6: aios.orchestrator.v1.Orchestrator.RunTaskStream:input_type -> aios.orchestrator.v1.RunTaskRequest
+	4, // 7: aios.orchestrator.v1.Orchestrator.ListRuns:input_type -> aios.orchestrator.v1.ListRunsRequest
+	1, // 8: aios.orchestrator.v1.Orchestrator.CancelRun:input_type -> aios.orchestrator.v1.CancelRunRequest
+	8, // 9: aios.orchestrator.v1.Orchestrator.RunTask:output_type -> aios.orchestrator.v1.RunTaskReply
+	6, // 10: aios.orchestrator.v1.Orchestrator.RunTaskStream:output_type -> aios.orchestrator.v1.StreamEvent
+	5, // 11: aios.orchestrator.v1.Orchestrator.ListRuns:output_type -> aios.orchestrator.v1.ListRunsReply
+	2, // 12: aios.orchestrator.v1.Orchestrator.CancelRun:output_type -> aios.orchestrator.v1.CancelRunReply
+	9, // [9:13] is the sub-list for method output_type
+	5, // [5:9] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_orchestrator_v1_orchestrator_proto_init() }
@@ -599,7 +706,7 @@ func file_orchestrator_v1_orchestrator_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_orchestrator_v1_orchestrator_proto_rawDesc), len(file_orchestrator_v1_orchestrator_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   7,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

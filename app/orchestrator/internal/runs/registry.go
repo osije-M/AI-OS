@@ -9,6 +9,7 @@
 package runs
 
 import (
+	"context"
 	"log"
 	"sort"
 	"sync"
@@ -30,6 +31,10 @@ type Run struct {
 	StartedAt   time.Time
 	LastEventAt time.Time
 	FinishedAt  time.Time // 零值 = 仍在运行
+
+	// M7-3 取消支持(不进 RunInfo 序列化)。
+	cancel          context.CancelFunc // 在飞执行的取消钩子;可为 nil
+	cancelRequested bool               // 用户发起过 CancelRun(区分其他 Canceled 来源)
 }
 
 // Registry 是线程安全的 live 注册表。
@@ -81,8 +86,9 @@ func isTerminal(s orchestratorv1.RunState) bool {
 	return false
 }
 
-// Register 登记一个新 run(RUNNING)。重复登记打日志忽略。
-func (r *Registry) Register(traceID, task string) {
+// Register 登记一个新 run(RUNNING)。cancel 是该 run 在飞执行的取消钩子(可为 nil,
+// 如测试);重复登记打日志忽略。
+func (r *Registry) Register(traceID, task string, cancel context.CancelFunc) {
 	r.mu.Lock()
 	if _, dup := r.runs[traceID]; dup {
 		r.mu.Unlock()
@@ -98,6 +104,7 @@ func (r *Registry) Register(traceID, task string) {
 		State:       orchestratorv1.RunState_RUN_STATE_RUNNING,
 		StartedAt:   now,
 		LastEventAt: now,
+		cancel:      cancel,
 	}
 	active := r.activeLocked()
 	r.mu.Unlock()
@@ -197,6 +204,41 @@ func (r *Registry) List() []*orchestratorv1.RunInfo {
 		return out[i].StartedAtMs > out[j].StartedAtMs
 	})
 	return out
+}
+
+// Cancel 请求取消一个 run(M7-3)。只发信号不迁移状态——CANCELLED 由持有 handler
+// 的单写者在观察到取消后经 Finish 写入(单写者原则不破)。
+// 返回:found=false 未知 trace;RUNNING → 标记+调 cancel 钩子,state 返回 CANCELLED(预期终态);
+// 已终态 → 原样返回当前终态(幂等,无副作用)。
+func (r *Registry) Cancel(traceID string) (bool, orchestratorv1.RunState) {
+	r.mu.Lock()
+	run, ok := r.runs[traceID]
+	if !ok {
+		r.mu.Unlock()
+		return false, orchestratorv1.RunState_RUN_STATE_UNSPECIFIED
+	}
+	if isTerminal(run.State) {
+		st := run.State
+		r.mu.Unlock()
+		return true, st
+	}
+	run.cancelRequested = true
+	cancel := run.cancel
+	r.mu.Unlock()
+	if cancel != nil {
+		cancel() // 持锁外调用,避免与 handler 的 Finish 抢锁
+	}
+	log.Printf("[runs] cancel requested: %s", traceID)
+	return true, orchestratorv1.RunState_RUN_STATE_CANCELLED
+}
+
+// CancelRequested 返回该 run 是否被用户请求过取消(handler 用来区分
+// "用户取消"与"下游断开/超时"等其他 Canceled 来源)。
+func (r *Registry) CancelRequested(traceID string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	run, ok := r.runs[traceID]
+	return ok && run.cancelRequested
 }
 
 // ActiveCount 返回 RUNNING 数量。
