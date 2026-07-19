@@ -701,7 +701,12 @@ async function fetchList() {
  * @returns {string} HTML string
  */
 function renderHeader(trace) {
-  const { traceId, task, status, route, elapsedMs, startedAt, endedAt } = trace;
+  // protojson 把 int64 序列化为字符串("elapsedMs":"7"),统一转数字再用
+  // (内置 DEMO 数据本来就是数字,Number() 幂等)。
+  const { traceId, task, status, route } = trace;
+  const elapsedMs = trace.elapsedMs !== undefined && trace.elapsedMs !== '' ? Number(trace.elapsedMs) : undefined;
+  const startedAt = trace.startedAt ? Number(trace.startedAt) : 0;
+  const endedAt   = trace.endedAt   ? Number(trace.endedAt)   : 0;
 
   const statusBadge = (status || '').toUpperCase() === 'OK'
     ? `<span class="badge badge-ok">✓ OK</span>`
@@ -710,7 +715,7 @@ function renderHeader(trace) {
   const routeBadge = route
     ? `<span class="badge badge-route">${escHtml(route)}</span>` : '';
 
-  const elapsed = typeof elapsedMs === 'number'
+  const elapsed = Number.isFinite(elapsedMs)
     ? `${(elapsedMs / 1000).toFixed(2)} s` : '—';
 
   const startStr  = startedAt ? new Date(startedAt).toLocaleString('zh-CN') : '—';
@@ -1040,10 +1045,11 @@ function renderRecentList(traces, container) {
       status = 'ORPHANED';
     }
     const dot = status === 'OK' ? '🟢' : (status === 'RUNNING' ? '🔵' : (status === 'ORPHANED' ? '🟠' : '🔴'));
-    const ms    = typeof t.elapsedMs === 'number' && t.elapsedMs > 0
-      ? `${(t.elapsedMs / 1000).toFixed(1)}s` : (status === 'RUNNING' ? '运行中' : status === 'ORPHANED' ? '孤儿' : '');
+    const elapsedNum = Number(t.elapsedMs) || 0; // protojson int64 → 字符串,统一转数字
+    const ms    = elapsedNum > 0
+      ? `${(elapsedNum / 1000).toFixed(1)}s` : (status === 'RUNNING' ? '运行中' : status === 'ORPHANED' ? '孤儿' : '');
     return `
-<div class="dropdown-item" onclick="selectTrace(${JSON.stringify(escHtml(t.traceId))})">
+<div class="dropdown-item" onclick="selectTrace('${escHtml(t.traceId)}')">
   <span class="di-id">${escHtml(t.traceId)}</span>
   <span class="di-task">${escHtml(t.task || '')}</span>
   <span class="di-status">${dot} ${escHtml(ms)}</span>
@@ -1104,7 +1110,7 @@ async function pollLiveRuns() {
       const secs = (Number(r.elapsedMs || 0) / 1000).toFixed(1);
       const node = r.currentNode ? `@ ${escHtml(r.currentNode)}` : '';
       const route = r.route ? `[${escHtml(r.route)}]` : '';
-      return `<div class="live-row" onclick="selectTrace(${JSON.stringify(escHtml(r.traceId))})">
+      return `<div class="live-row" onclick="selectTrace('${escHtml(r.traceId)}')">
   <span class="live-state st-${escHtml(st)}">${escHtml(st)}</span>
   <span class="live-id">${escHtml(r.traceId)}</span>
   <span>${route}</span><span class="live-node">${node}</span>
